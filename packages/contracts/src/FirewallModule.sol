@@ -49,6 +49,9 @@ contract FirewallModule {
 
     // NEW
     event Cancelled(bytes32 indexed txId);
+    event TransactionScheduled(bytes32 indexed txId, address indexed to, uint256 value, uint48 unlockTime);
+    event TransactionExecuted(bytes32 indexed txId, address indexed to, uint256 value);
+    event TransactionCancelled(bytes32 indexed txId);
 
     function init(address router_, address owner_, address recovery_) external {
         S storage s = _s();
@@ -107,6 +110,7 @@ contract FirewallModule {
         });
 
         emit Scheduled(txId, to, value, unlock);
+        emit TransactionScheduled(txId, to, value, unlock);
     }
 
     // NEW: отмена отложенной транзакции (до исполнения)
@@ -120,6 +124,7 @@ contract FirewallModule {
         delete s.scheduled[txId];
 
         emit Cancelled(txId);
+        emit TransactionCancelled(txId);
     }
 
     function executeScheduled(bytes32 txId) external onlyOwner {
@@ -138,6 +143,7 @@ contract FirewallModule {
         PolicyRouter(s.router).notifyExecuted(address(this), t.to, t.value, t.data);
 
         emit Executed(txId, t.to, t.value);
+        emit TransactionExecuted(txId, t.to, t.value);
     }
 
     function executeNow(address to, uint256 value, bytes calldata data) external onlyOwner {
