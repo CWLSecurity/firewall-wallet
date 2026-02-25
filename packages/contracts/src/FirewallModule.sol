@@ -8,6 +8,7 @@ error Firewall_NotInitialized();
 error Firewall_Unauthorized();
 error Firewall_RevertedByPolicy();
 error Firewall_AllowNotSchedulable();
+error Firewall_ZeroAddress();
 
 error Firewall_NotScheduled(bytes32 txId);
 error Firewall_AlreadyScheduled(bytes32 txId);
@@ -56,6 +57,7 @@ contract FirewallModule {
     function init(address router_, address owner_, address recovery_) external {
         S storage s = _s();
         if (s.owner != address(0)) revert Firewall_Unauthorized();
+        if (router_ == address(0) || owner_ == address(0)) revert Firewall_ZeroAddress();
         s.router = router_;
         s.owner = owner_;
         s.recovery = recovery_;

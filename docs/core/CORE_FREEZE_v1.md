@@ -138,10 +138,13 @@ Global:
 
 FirewallModule:
 - `init` is callable only once.
+- `init` requires non-zero `router` and `owner`.
 - `onlyOwner` gates all sensitive functions.
 - Delay path cannot bypass router evaluation.
 - A scheduled transaction cannot execute twice.
 - Cancel removes a scheduled transaction correctly (deletes storage).
+ - Scheduled transactions are NOT re-evaluated at execute time (deterministic delay by design).
+ - Reentrancy from owner-controlled contracts is considered user-controlled and out of scope for MVP; core relies on state update ordering and onlyOwner gating.
 
 PolicyRouter:
 - `setFirewallModule` is callable only by `owner` and only once (legacy; unused when bound at construction).
