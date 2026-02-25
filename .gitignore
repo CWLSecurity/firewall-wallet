@@ -24,3 +24,13 @@ packages/contracts/.env.*
 .env.*
 packages/contracts/.env
 packages/contracts/.env.*
+
+# --- foundry generated ---
+/packages/contracts/broadcast/
+/packages/contracts/broadcast/**
+/packages/contracts/out/
+/packages/contracts/out/**
+/packages/contracts/cache/
+/packages/contracts/cache/**
+/packages/contracts/deployments/
+/packages/contracts/deployments/**
