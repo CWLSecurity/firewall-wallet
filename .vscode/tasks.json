@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Forge: build (contracts)",
+      "type": "shell",
+      "command": "cd packages/contracts && forge build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Forge: test (contracts)",
+      "type": "shell",
+      "command": "cd packages/contracts && forge test -vvv",
+      "problemMatcher": []
+    },
+    {
+      "label": "Codex: open (repo root)",
+      "type": "shell",
+      "command": "cd /home/pavel/firewall-wallet && codex",
+      "problemMatcher": []
+    },
+    {
+      "label": "Codex: open (contracts)",
+      "type": "shell",
+      "command": "cd packages/contracts && codex",
+      "problemMatcher": []
+    }
+  ]
+}

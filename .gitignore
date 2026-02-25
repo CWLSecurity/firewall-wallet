@@ -1,0 +1,26 @@
+.env
+packages/contracts/out/
+packages/contracts/cache/
+packages/contracts/broadcast/
+packages/contracts/deployments/
+
+# --- Node ---
+node_modules/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+
+# --- OS / IDE ---
+.DS_Store
+.vscode/*.log
+# secrets
+.env
+.env.*
+packages/contracts/.env
+packages/contracts/.env.*
+
+# --- secrets ---
+.env
+.env.*
+packages/contracts/.env
+packages/contracts/.env.*
