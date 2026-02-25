@@ -24,8 +24,11 @@ contract PolicyRouter {
     event FirewallModuleSet(address indexed firewallModule);
     event PostExecHookFailed(address indexed policy, bytes returndata);
 
-    constructor(address[] memory _policies) {
-        owner = msg.sender;
+    constructor(address owner_, address firewallModule_, address[] memory _policies) {
+        if (owner_ == address(0)) revert Router_ZeroAddress();
+        owner = owner_;
+        if (firewallModule_ == address(0)) revert Router_ZeroAddress();
+        firewallModule = firewallModule_;
 
         if (_policies.length == 0) revert Router_ZeroPolicies();
 
@@ -40,7 +43,7 @@ contract PolicyRouter {
         return policies.length;
     }
 
-    // NEW: one-time привязка модуля
+    // NEW: one-time привязка модуля (legacy; not used when bound in constructor)
     function setFirewallModule(address _module) external {
         if (msg.sender != owner) revert Router_Unauthorized();
         if (_module == address(0)) revert Router_ZeroAddress();

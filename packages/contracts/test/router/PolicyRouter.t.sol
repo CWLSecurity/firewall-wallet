@@ -8,11 +8,14 @@ import {Decision} from "../../src/interfaces/IFirewallPolicy.sol";
 import {MockPolicy} from "../mocks/MockPolicies.sol";
 
 contract PolicyRouterTest is Test {
+    address internal OWNER = address(0xA11CE);
+    address internal FIREWALL = address(0xF1EE);
+
     function test_Constructor_RevertsOnZeroPolicies() public {
         address[] memory _policies = new address[](0);
 
         vm.expectRevert();
-        new PolicyRouter(_policies);
+        new PolicyRouter(OWNER, FIREWALL, _policies);
     }
 
     function test_PolicyCount() public {
@@ -25,7 +28,7 @@ contract PolicyRouterTest is Test {
         _policies[1] = address(p2);
         _policies[2] = address(p3);
 
-        PolicyRouter r = new PolicyRouter(_policies);
+        PolicyRouter r = new PolicyRouter(OWNER, FIREWALL, _policies);
         assertEq(r.policyCount(), 3);
     }
 
@@ -39,7 +42,7 @@ contract PolicyRouterTest is Test {
         _policies[1] = address(delayP);
         _policies[2] = address(revertP);
 
-        PolicyRouter r = new PolicyRouter(_policies);
+        PolicyRouter r = new PolicyRouter(OWNER, FIREWALL, _policies);
 
         (Decision d, uint48 delay) = r.evaluate(address(0xCAFE), address(this), 0, "");
 
@@ -57,7 +60,7 @@ contract PolicyRouterTest is Test {
         _policies[1] = address(delayP);
         _policies[2] = address(allowP2);
 
-        PolicyRouter r = new PolicyRouter(_policies);
+        PolicyRouter r = new PolicyRouter(OWNER, FIREWALL, _policies);
 
         (Decision d, uint48 delay) = r.evaluate(address(0xCAFE), address(this), 0, "");
 
@@ -73,7 +76,7 @@ contract PolicyRouterTest is Test {
         _policies[0] = address(p1);
         _policies[1] = address(p2);
 
-        PolicyRouter r = new PolicyRouter(_policies);
+        PolicyRouter r = new PolicyRouter(OWNER, FIREWALL, _policies);
 
         (Decision d, uint48 delay) = r.evaluate(address(0xCAFE), address(this), 0, "");
 
