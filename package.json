@@ -1,0 +1,8 @@
+{
+  "name": "firewall-wallet",
+  "private": true,
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "test:contracts": "pnpm --dir packages/contracts test"
+  }
+}
