@@ -163,4 +163,36 @@ contract FirewallModule {
     }
 
     receive() external payable {}
+
+    /// @notice Read-only view of a scheduled tx without exposing calldata.
+    /// @return exists True if scheduled and not executed.
+    /// @return executed True if already executed.
+    /// @return to Target address.
+    /// @return value Native value (ETH).
+    /// @return unlockTime Timestamp when execution is allowed.
+    /// @return dataHash keccak256(data) of calldata.
+    function getScheduled(bytes32 txId)
+        external
+        view
+        returns (
+            bool exists,
+            bool executed,
+            address to,
+            uint256 value,
+            uint48 unlockTime,
+            bytes32 dataHash
+        )
+    {
+        ScheduledTx storage t = _s().scheduled[txId];
+        if (t.unlockTime == 0) {
+            return (false, false, address(0), 0, 0, bytes32(0));
+        }
+
+        executed = t.executed;
+        exists = !executed;
+        to = t.to;
+        value = t.value;
+        unlockTime = t.unlockTime;
+        dataHash = keccak256(t.data);
+    }
 }

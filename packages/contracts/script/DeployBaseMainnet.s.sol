@@ -19,6 +19,8 @@ contract DeployBaseMainnet is Script {
 
         vm.startBroadcast(pk);
 
+        // NOTE: Deprecated path. Prefer Factory deployments for production.
+
         // 1) Deploy policies
         // InfiniteApprovalPolicy: constructor(uint256)
         InfiniteApprovalPolicy pApprove = new InfiniteApprovalPolicy(type(uint256).max);
@@ -36,23 +38,20 @@ contract DeployBaseMainnet is Script {
         // UnknownContractBlockPolicy: constructor(address)
         UnknownContractBlockPolicy pUnknown = new UnknownContractBlockPolicy(owner);
 
-        // 2) Router (requires address[] in constructor)
-        address[] memory arr = new address[](4) ;
+        // 2) Deploy firewall
+        FirewallModule firewall = new FirewallModule();
+
+        // 3) Router (requires owner + firewall + policies)
+        address[] memory arr = new address[](4);
         arr[0] = address(pApprove);
         arr[1] = address(pLarge);
         arr[2] = address(pNew);
         arr[3] = address(pUnknown);
 
-        PolicyRouter router = new PolicyRouter(arr);
-
-        // 3) Deploy firewall
-        FirewallModule firewall = new FirewallModule();
+        PolicyRouter router = new PolicyRouter(owner, address(firewall), arr);
 
         // 4) Init firewall
         firewall.init(address(router), owner, recovery);
-
-        // 5) Bind router -> firewall
-        router.setFirewallModule(address(firewall));
 
         vm.stopBroadcast();
 

@@ -12,7 +12,8 @@ import {
     Firewall_NotScheduled,
     Firewall_NotUnlocked,
     Firewall_AlreadyExecuted,
-    Firewall_ExecutionFailed
+    Firewall_ExecutionFailed,
+    Firewall_ZeroAddress
 } from "../src/FirewallModule.sol";
 
 import {Decision} from "../src/interfaces/IFirewallPolicy.sol";
@@ -102,6 +103,21 @@ contract FirewallModuleTest is Test {
         m.init(address(r), OWNER, RECOVERY);
     }
 
+    function testInit_zeroRouter_revertsZeroAddress() public {
+        FirewallModule m = new FirewallModule();
+        vm.prank(OWNER);
+        vm.expectRevert(Firewall_ZeroAddress.selector);
+        m.init(address(0), OWNER, RECOVERY);
+    }
+
+    function testInit_zeroOwner_revertsZeroAddress() public {
+        MockRouter r = new MockRouter(Decision.Allow, 0);
+        FirewallModule m = new FirewallModule();
+        vm.prank(OWNER);
+        vm.expectRevert(Firewall_ZeroAddress.selector);
+        m.init(address(r), address(0), RECOVERY);
+    }
+
     function testExecuteNow_onlyOwner_revertsForNonOwner() public {
         MockRouter r = new MockRouter(Decision.Allow, 0);
         FirewallModule m = _deployAndInit(address(r));
@@ -129,6 +145,15 @@ contract FirewallModuleTest is Test {
         vm.prank(address(0xDEAD));
         vm.expectRevert(Firewall_Unauthorized.selector);
         m.executeScheduled(bytes32(uint256(1)));
+    }
+
+    function testCancelScheduled_onlyOwner_revertsForNonOwner() public {
+        MockRouter r = new MockRouter(Decision.Delay, 5);
+        FirewallModule m = _deployAndInit(address(r));
+
+        vm.prank(address(0xDEAD));
+        vm.expectRevert(Firewall_Unauthorized.selector);
+        m.cancelScheduled(bytes32(uint256(1)));
     }
 
     // -------------------- executeNow --------------------
@@ -231,10 +256,70 @@ contract FirewallModuleTest is Test {
         MockRouter r = new MockRouter(Decision.Delay, 7);
         FirewallModule m = _deployAndInit(address(r));
 
+        bytes32 expectedTxId = m.computeTxId(address(m), 0, address(receiver), 0.3 ether, "");
+        vm.expectEmit(true, true, false, true);
+        emit FirewallModule.TransactionScheduled(
+            expectedTxId,
+            address(receiver),
+            0.3 ether,
+            uint48(block.timestamp + 7)
+        );
+
         vm.prank(OWNER);
         bytes32 txId = m.schedule(address(receiver), 0.3 ether, "");
 
         assertTrue(txId != bytes32(0));
+    }
+
+    function testSchedule_whenDelay_returnsExpectedTxId() public {
+        MockRouter r = new MockRouter(Decision.Delay, 7);
+        FirewallModule m = _deployAndInit(address(r));
+
+        vm.prank(OWNER);
+        bytes32 txId = m.schedule(address(receiver), 0.3 ether, "");
+
+        bytes32 expected = m.computeTxId(address(m), 0, address(receiver), 0.3 ether, "");
+        assertEq(txId, expected);
+    }
+
+    function testSchedule_getScheduled_readsDetails() public {
+        MockRouter r = new MockRouter(Decision.Delay, 7);
+        FirewallModule m = _deployAndInit(address(r));
+
+        bytes memory data = hex"";
+        vm.prank(OWNER);
+        bytes32 txId = m.schedule(address(receiver), 0.3 ether, data);
+
+        (
+            bool exists,
+            bool executed,
+            address to,
+            uint256 value,
+            uint48 unlockTime,
+            bytes32 dataHash
+        ) = m.getScheduled(txId);
+
+        assertTrue(exists);
+        assertFalse(executed);
+        assertEq(to, address(receiver));
+        assertEq(value, 0.3 ether);
+        assertEq(unlockTime, uint48(block.timestamp + 7));
+        assertEq(dataHash, keccak256(data));
+    }
+
+    function testCancelScheduled_getScheduled_notExists() public {
+        MockRouter r = new MockRouter(Decision.Delay, 1);
+        FirewallModule m = _deployAndInit(address(r));
+
+        vm.prank(OWNER);
+        bytes32 txId = m.schedule(address(receiver), 0.2 ether, "");
+
+        vm.prank(OWNER);
+        m.cancelScheduled(txId);
+
+        (bool exists, bool executed, , , , ) = m.getScheduled(txId);
+        assertFalse(exists);
+        assertFalse(executed);
     }
 
     // -------------------- executeScheduled --------------------
@@ -277,6 +362,9 @@ contract FirewallModuleTest is Test {
 
         vm.warp(block.timestamp + 10);
 
+        vm.expectEmit(true, true, false, true);
+        emit FirewallModule.TransactionExecuted(txId, address(receiver), 0.5 ether);
+
         vm.expectCall(
             address(r),
             abi.encodeWithSelector(
@@ -297,6 +385,25 @@ contract FirewallModuleTest is Test {
         assertEq(r.notifyCalls(), 1);
     }
 
+    function testExecuteScheduled_getScheduled_executedNotExists() public {
+        MockRouter r = new MockRouter(Decision.Delay, 1);
+        FirewallModule m = _deployAndInit(address(r));
+
+        vm.deal(address(m), 1 ether);
+
+        vm.prank(OWNER);
+        bytes32 txId = m.schedule(address(receiver), 0.2 ether, "");
+
+        vm.warp(block.timestamp + 1);
+
+        vm.prank(OWNER);
+        m.executeScheduled(txId);
+
+        (bool exists, bool executed, , , , ) = m.getScheduled(txId);
+        assertFalse(exists);
+        assertTrue(executed);
+    }
+
     function testExecuteScheduled_twice_revertsAlreadyExecuted() public {
         MockRouter r = new MockRouter(Decision.Delay, 1);
         FirewallModule m = _deployAndInit(address(r));
@@ -313,6 +420,24 @@ contract FirewallModuleTest is Test {
 
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(Firewall_AlreadyExecuted.selector, txId));
+        m.executeScheduled(txId);
+    }
+
+    function testCancelScheduled_removesTx() public {
+        MockRouter r = new MockRouter(Decision.Delay, 1);
+        FirewallModule m = _deployAndInit(address(r));
+
+        vm.prank(OWNER);
+        bytes32 txId = m.schedule(address(receiver), 0.2 ether, "");
+
+        vm.expectEmit(true, true, false, true);
+        emit FirewallModule.TransactionCancelled(txId);
+
+        vm.prank(OWNER);
+        m.cancelScheduled(txId);
+
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(Firewall_NotScheduled.selector, txId));
         m.executeScheduled(txId);
     }
 

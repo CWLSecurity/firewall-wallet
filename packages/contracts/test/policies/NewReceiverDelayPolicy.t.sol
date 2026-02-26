@@ -11,6 +11,7 @@ contract NewReceiverDelayPolicyTest is Test {
 
     address receiver1 = address(0xCAFE);
     address receiver2 = address(0xBEEF);
+    address token = address(0x1000);
 
     uint48 DELAY = 1 days;
 
@@ -42,6 +43,35 @@ contract NewReceiverDelayPolicyTest is Test {
     function test_Delay_OnAnotherReceiver() public view {
         (Decision decision, uint48 delay) =
             policy.evaluate(receiver2, address(this), 0, "");
+
+        assertEq(uint256(decision), uint256(Decision.Delay));
+        assertEq(uint256(delay), uint256(DELAY));
+    }
+
+    function test_Delay_OnERC20Transfer_NewReceiver() public view {
+        bytes memory data = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            receiver1,
+            123
+        );
+
+        (Decision decision, uint48 delay) =
+            policy.evaluate(address(this), token, 0, data);
+
+        assertEq(uint256(decision), uint256(Decision.Delay));
+        assertEq(uint256(delay), uint256(DELAY));
+    }
+
+    function test_Delay_OnERC20TransferFrom_NewReceiver() public view {
+        bytes memory data = abi.encodeWithSignature(
+            "transferFrom(address,address,uint256)",
+            address(0xA1),
+            receiver2,
+            456
+        );
+
+        (Decision decision, uint48 delay) =
+            policy.evaluate(address(this), token, 0, data);
 
         assertEq(uint256(decision), uint256(Decision.Delay));
         assertEq(uint256(delay), uint256(DELAY));
