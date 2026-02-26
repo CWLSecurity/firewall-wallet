@@ -14,7 +14,7 @@ Core contracts in this repository:
   - `LargeTransferDelayPolicy` (`packages/contracts/src/policies/LargeTransferDelayPolicy.sol`)
   - `NewReceiverDelayPolicy` (`packages/contracts/src/policies/NewReceiverDelayPolicy.sol`)
   - `InfiniteApprovalPolicy` (`packages/contracts/src/policies/InfiniteApprovalPolicy.sol`)
-  - `UnknownContractBlockPolicy` (`packages/contracts/src/policies/UnknownContractBlockPolicy.sol`)
+  - `UnknownContractBlockPolicy` (`packages/contracts/src/policies/UnknownContractBlockPolicy.sol`) (centralized allowlist; opt-in only)
 
 Core contract referenced in product docs:
 - Factory (Wallet deployment contract).
@@ -181,3 +181,4 @@ Does NOT protect against:
 - External protocol risks after an allowed transaction executes.
 - MEV, front-running, or network-level censorship.
 - Social engineering or signing malicious transactions.
+- Centralized allowlist risk if `UnknownContractBlockPolicy` is enabled (not in default presets).
