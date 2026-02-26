@@ -12,9 +12,12 @@ contract InfiniteApprovalPolicy is IFirewallPolicy {
     /// @notice If set to 0, only blocks approve(spender, type(uint256).max) (legacy behavior).
     ///         If set > 0, blocks approve(spender, amount) for any amount >= approvalLimit.
     uint256 public immutable approvalLimit;
+    /// @notice If true, permit() is allowed (DeFi-friendly). If false, permit() is blocked.
+    bool public immutable allowPermit;
 
-    constructor(uint256 approvalLimit_) {
+    constructor(uint256 approvalLimit_, bool allowPermit_) {
         approvalLimit = approvalLimit_;
+        allowPermit = allowPermit_;
     }
 
     function evaluate(
@@ -83,8 +86,8 @@ contract InfiniteApprovalPolicy is IFirewallPolicy {
         }
 
         if (sel == PERMIT_SELECTOR) {
-            // MVP: treat permit as high-risk, block to avoid silent approvals.
-            return (Decision.Revert, 0);
+            // MVP: optionally allow permit (preset-driven).
+            return (allowPermit ? Decision.Allow : Decision.Revert, 0);
         }
 
         return (Decision.Allow, 0);

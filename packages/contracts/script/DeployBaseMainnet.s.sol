@@ -23,7 +23,7 @@ contract DeployBaseMainnet is Script {
 
         // 1) Deploy policies
         // InfiniteApprovalPolicy: constructor(uint256)
-        InfiniteApprovalPolicy pApprove = new InfiniteApprovalPolicy(type(uint256).max);
+        InfiniteApprovalPolicy pApprove = new InfiniteApprovalPolicy(type(uint256).max, false);
 
         // Если компиляция скажет, что сигнатуры отличаются — поправим.
         LargeTransferDelayPolicy pLarge = new LargeTransferDelayPolicy(
