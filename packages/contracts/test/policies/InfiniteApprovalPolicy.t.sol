@@ -16,7 +16,7 @@ contract InfiniteApprovalPolicyTest is Test {
     address spender = address(0xBEEF);
 
     function setUp() public {
-        policy = new InfiniteApprovalPolicy(0);
+        policy = new InfiniteApprovalPolicy(0, false);
         token = new MockERC20();
     }
 
@@ -35,7 +35,7 @@ contract InfiniteApprovalPolicyTest is Test {
     }
 
     function test_RevertsOn_IncreaseAllowance_WhenAboveLimit() public {
-        policy = new InfiniteApprovalPolicy(1000);
+        policy = new InfiniteApprovalPolicy(1000, false);
         bytes memory data = abi.encodeWithSignature(
             "increaseAllowance(address,uint256)",
             spender,
@@ -50,7 +50,7 @@ contract InfiniteApprovalPolicyTest is Test {
     }
 
     function test_AllowsOn_IncreaseAllowance_WhenBelowLimit() public {
-        policy = new InfiniteApprovalPolicy(1000);
+        policy = new InfiniteApprovalPolicy(1000, false);
         bytes memory data = abi.encodeWithSignature(
             "increaseAllowance(address,uint256)",
             spender,
@@ -109,6 +109,26 @@ contract InfiniteApprovalPolicyTest is Test {
 
         assertEq(uint256(decision), uint256(Decision.Revert), "permit must revert");
         assertEq(uint256(delay), 0, "delay must be 0 for revert");
+    }
+
+    function test_AllowsOn_Permit_WhenAllowed() public {
+        policy = new InfiniteApprovalPolicy(0, true);
+        bytes memory data = abi.encodeWithSignature(
+            "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)",
+            address(0xA1),
+            spender,
+            100,
+            0,
+            0,
+            bytes32(0),
+            bytes32(0)
+        );
+
+        (Decision decision, uint48 delay) =
+            policy.evaluate(address(token), address(this), 0, data);
+
+        assertEq(uint256(decision), uint256(Decision.Allow), "permit must allow when enabled");
+        assertEq(uint256(delay), 0, "delay must be 0 for allow");
     }
 
     function test_AllowsOn_SmallApprove() public view {
