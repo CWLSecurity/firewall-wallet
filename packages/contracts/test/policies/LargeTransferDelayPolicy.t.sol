@@ -42,8 +42,7 @@ contract LargeTransferDelayPolicyTest is Test {
     }
 
     function test_Allow_OnERC20Transfer_CalldataNotHandledHere() public view {
-        // ВАЖНО: эта политика по факту не анализирует ERC20 calldata.
-        // Она отвечает только за native value (ETH).
+        // ВАЖНО: эта политика анализирует ERC20 calldata.
         bytes memory data = abi.encodeWithSignature(
             "transfer(address,uint256)",
             receiver,
@@ -53,8 +52,8 @@ contract LargeTransferDelayPolicyTest is Test {
         (Decision decision, uint48 delay) =
             policy.evaluate(address(token), address(this), 0, data);
 
-        assertEq(uint256(decision), uint256(Decision.Allow), "ERC20 transfer is not handled by this policy");
-        assertEq(uint256(delay), 0, "delay must be 0");
+        assertEq(uint256(decision), uint256(Decision.Delay), "ERC20 transfer must be delayed");
+        assertEq(uint256(delay), uint256(DELAY), "delay must equal configured delay");
     }
 
     function test_Allow_OnNonTransferCall() public view {
@@ -69,5 +68,20 @@ contract LargeTransferDelayPolicyTest is Test {
 
         assertEq(uint256(decision), uint256(Decision.Allow), "non-related calls must be allowed");
         assertEq(uint256(delay), 0, "delay must be 0");
+    }
+
+    function test_Delay_OnERC20TransferFrom_LargeAmount() public view {
+        bytes memory data = abi.encodeWithSignature(
+            "transferFrom(address,address,uint256)",
+            address(0xA1),
+            receiver,
+            THRESHOLD + 1
+        );
+
+        (Decision decision, uint48 delay) =
+            policy.evaluate(address(token), address(this), 0, data);
+
+        assertEq(uint256(decision), uint256(Decision.Delay), "ERC20 transferFrom must be delayed");
+        assertEq(uint256(delay), uint256(DELAY), "delay must equal configured delay");
     }
 }
