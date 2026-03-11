@@ -28,6 +28,8 @@ import {console2} from "forge-std/console2.sol";
 import {FirewallFactory} from "../src/FirewallFactory.sol";
 import {FirewallModule} from "../src/FirewallModule.sol";
 import {Decision} from "../src/interfaces/IFirewallPolicy.sol";
+import {PolicyPackRegistry} from "../src/PolicyPackRegistry.sol";
+import {SimpleEntitlementManager} from "../src/SimpleEntitlementManager.sol";
 
 import {InfiniteApprovalPolicy} from "../src/policies/InfiniteApprovalPolicy.sol";
 import {LargeTransferDelayPolicy} from "../src/policies/LargeTransferDelayPolicy.sol";
@@ -49,7 +51,7 @@ contract SmokeMvpBase is Script {
         address indexed wallet,
         address indexed router,
         address recovery,
-        uint8 presetId
+        uint256 basePackId
     );
 
     function run() external {
@@ -72,7 +74,7 @@ contract SmokeMvpBase is Script {
         internal
         returns (RunContext memory ctx)
     {
-        ctx.factory = _resolveFactory(factoryAddr);
+        ctx.factory = _resolveFactory(factoryAddr, owner);
 
         console2.log("factory", address(ctx.factory));
         console2.log("owner", owner);
@@ -142,7 +144,10 @@ contract SmokeMvpBase is Script {
         console2.log("permit_decision_preset1", uint256(permitDecisionPreset1));
     }
 
-    function _resolveFactory(address factoryAddr) internal returns (FirewallFactory factory) {
+    function _resolveFactory(address factoryAddr, address owner)
+        internal
+        returns (FirewallFactory factory)
+    {
         if (factoryAddr != address(0)) {
             return FirewallFactory(factoryAddr);
         }
@@ -154,17 +159,22 @@ contract SmokeMvpBase is Script {
         LargeTransferDelayPolicy large = new LargeTransferDelayPolicy(0.05 ether, 1 hours);
         NewReceiverDelayPolicy newReceiver = new NewReceiverDelayPolicy(1 hours);
 
+        PolicyPackRegistry registry = new PolicyPackRegistry(owner);
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(owner);
+
         address[] memory conservative = new address[](3);
         conservative[0] = address(conservativeApprove);
         conservative[1] = address(large);
         conservative[2] = address(newReceiver);
+        registry.registerPack(0, registry.PACK_TYPE_BASE(), keccak256("base-conservative"), true, conservative);
 
         address[] memory defi = new address[](3);
         defi[0] = address(defiApprove);
         defi[1] = address(large);
         defi[2] = address(newReceiver);
+        registry.registerPack(1, registry.PACK_TYPE_BASE(), keccak256("base-defi"), true, defi);
 
-        factory = new FirewallFactory(conservative, defi);
+        factory = new FirewallFactory(address(registry), address(entitlement));
     }
 
     function _createWalletAndRouter(FirewallFactory factory, address owner, address recovery, uint8 presetId)
@@ -175,7 +185,7 @@ contract SmokeMvpBase is Script {
         wallet = factory.createWallet(owner, recovery, presetId);
         Vm.Log[] memory entries = vm.getRecordedLogs();
 
-        bytes32 sig = keccak256("WalletCreated(address,address,address,address,uint8)");
+        bytes32 sig = keccak256("WalletCreated(address,address,address,address,uint256)");
         for (uint256 i = 0; i < entries.length; i++) {
             if (
                 entries[i].emitter == address(factory) && entries[i].topics.length == 4
@@ -196,7 +206,9 @@ contract SmokeMvpBase is Script {
         address wallet,
         bytes memory permitData
     ) internal view returns (Decision decision) {
-        address policyAddr = presetId == 0 ? factory.policiesConservative(0) : factory.policiesDefi(0);
+        PolicyPackRegistry registry = PolicyPackRegistry(factory.policyPackRegistry());
+        address[] memory policies = registry.getPackPolicies(presetId);
+        address policyAddr = policies[0];
         InfiniteApprovalPolicy policy = InfiniteApprovalPolicy(policyAddr);
         (decision,) = policy.evaluate(wallet, token, 0, permitData);
     }

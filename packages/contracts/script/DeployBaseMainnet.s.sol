@@ -5,6 +5,8 @@ import "forge-std/Script.sol";
 
 import {PolicyRouter} from "../src/PolicyRouter.sol";
 import {FirewallModule} from "../src/FirewallModule.sol";
+import {PolicyPackRegistry} from "../src/PolicyPackRegistry.sol";
+import {SimpleEntitlementManager} from "../src/SimpleEntitlementManager.sol";
 
 import {InfiniteApprovalPolicy} from "../src/policies/InfiniteApprovalPolicy.sol";
 import {LargeTransferDelayPolicy} from "../src/policies/LargeTransferDelayPolicy.sol";
@@ -20,12 +22,13 @@ contract DeployBaseMainnet is Script {
         vm.startBroadcast(pk);
 
         // NOTE: Deprecated path. Prefer Factory deployments for production.
+        PolicyPackRegistry registry = new PolicyPackRegistry(owner);
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(owner);
 
         // 1) Deploy policies
-        // InfiniteApprovalPolicy: constructor(uint256)
+        // InfiniteApprovalPolicy: constructor(uint256,bool)
         InfiniteApprovalPolicy pApprove = new InfiniteApprovalPolicy(type(uint256).max, false);
 
-        // Если компиляция скажет, что сигнатуры отличаются — поправим.
         LargeTransferDelayPolicy pLarge = new LargeTransferDelayPolicy(
             0.05 ether,
             3600
@@ -38,27 +41,30 @@ contract DeployBaseMainnet is Script {
         // UnknownContractBlockPolicy: constructor(address)
         UnknownContractBlockPolicy pUnknown = new UnknownContractBlockPolicy(owner);
 
-        // 2) Deploy firewall
+        address[] memory base = new address[](4);
+        base[0] = address(pApprove);
+        base[1] = address(pLarge);
+        base[2] = address(pNew);
+        base[3] = address(pUnknown);
+        registry.registerPack(0, registry.PACK_TYPE_BASE(), keccak256("base-conservative"), true, base);
+
+        // 2) Deploy firewall + router
         FirewallModule firewall = new FirewallModule();
 
-        // 3) Router (requires owner + firewall + policies)
-        address[] memory arr = new address[](4);
-        arr[0] = address(pApprove);
-        arr[1] = address(pLarge);
-        arr[2] = address(pNew);
-        arr[3] = address(pUnknown);
+        PolicyRouter router =
+            new PolicyRouter(owner, address(firewall), address(registry), address(entitlement), 0);
 
-        PolicyRouter router = new PolicyRouter(owner, address(firewall), arr);
-
-        // 4) Init firewall
+        // 3) Init firewall
         firewall.init(address(router), owner, recovery);
 
         vm.stopBroadcast();
 
-        // 6) Save addresses
+        // 4) Save addresses
         string memory obj = "deploy";
         vm.serializeAddress(obj, "router", address(router));
         vm.serializeAddress(obj, "firewall", address(firewall));
+        vm.serializeAddress(obj, "policyPackRegistry", address(registry));
+        vm.serializeAddress(obj, "entitlementManager", address(entitlement));
         vm.serializeAddress(obj, "policy_infiniteApproval", address(pApprove));
         vm.serializeAddress(obj, "policy_largeTransferDelay", address(pLarge));
         vm.serializeAddress(obj, "policy_newReceiverDelay", address(pNew));
