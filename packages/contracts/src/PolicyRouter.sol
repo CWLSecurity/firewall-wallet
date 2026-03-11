@@ -2,39 +2,76 @@
 pragma solidity ^0.8.23;
 
 import {Decision, IFirewallPolicy, IFirewallPostExecPolicy} from "./interfaces/IFirewallPolicy.sol";
+import {IPolicyPackRegistry} from "./interfaces/IPolicyPackRegistry.sol";
+import {IEntitlementManager} from "./interfaces/IEntitlementManager.sol";
 
 error Router_ZeroPolicies();
 error Router_InvalidPolicy(address policy);
-
-// NEW
 error Router_Unauthorized();
 error Router_ZeroAddress();
 error Router_FirewallAlreadySet();
+error Router_InvalidBasePack(uint256 packId);
+error Router_InvalidAddonPack(uint256 packId);
+error Router_PackNotActive(uint256 packId);
+error Router_PackAlreadyEnabled(uint256 packId);
+error Router_NotEntitled(uint256 packId);
+error Router_EntitlementUnavailable();
+error Router_DuplicatePolicy(address policy);
 
 contract PolicyRouter {
+    uint8 internal constant PACK_TYPE_BASE = 0;
+    uint8 internal constant PACK_TYPE_ADDON = 1;
+
+    // Base policies are fixed at creation and cannot be removed.
     IFirewallPolicy[] public policies;
 
-    // NEW: owner = deployer (для one-time настройки)
     address public immutable owner;
-
-    // NEW: кто имеет право дергать notifyExecuted
+    address public immutable policyPackRegistry;
+    address public immutable entitlementManager;
+    uint256 public immutable basePackId;
     address public firewallModule;
 
-    // NEW: события для операционного контроля
     event FirewallModuleSet(address indexed firewallModule);
     event PostExecHookFailed(address indexed policy, bytes returndata);
+    event AddonPackEnabled(uint256 indexed packId);
 
-    constructor(address owner_, address firewallModule_, address[] memory _policies) {
+    uint256[] internal _enabledAddonPackIds;
+    mapping(uint256 => bool) public isAddonPackEnabled;
+    mapping(uint256 => address[]) internal _enabledAddonPoliciesByPack;
+
+    constructor(
+        address owner_,
+        address firewallModule_,
+        address policyPackRegistry_,
+        address entitlementManager_,
+        uint256 basePackId_
+    ) {
         if (owner_ == address(0)) revert Router_ZeroAddress();
-        owner = owner_;
         if (firewallModule_ == address(0)) revert Router_ZeroAddress();
+        if (policyPackRegistry_ == address(0)) revert Router_ZeroAddress();
+
+        owner = owner_;
         firewallModule = firewallModule_;
+        policyPackRegistry = policyPackRegistry_;
+        entitlementManager = entitlementManager_;
+        basePackId = basePackId_;
 
-        if (_policies.length == 0) revert Router_ZeroPolicies();
+        IPolicyPackRegistry registry = IPolicyPackRegistry(policyPackRegistry_);
+        if (!registry.isPackActive(basePackId_)) revert Router_PackNotActive(basePackId_);
+        if (registry.packTypeOf(basePackId_) != PACK_TYPE_BASE) {
+            revert Router_InvalidBasePack(basePackId_);
+        }
 
-        for (uint256 i = 0; i < _policies.length; i++) {
-            address p = _policies[i];
+        address[] memory basePolicies = registry.getPackPolicies(basePackId_);
+        uint256 len = basePolicies.length;
+        if (len == 0) revert Router_ZeroPolicies();
+
+        for (uint256 i = 0; i < len; i++) {
+            address p = basePolicies[i];
             if (p == address(0)) revert Router_InvalidPolicy(p);
+            for (uint256 j = 0; j < i; j++) {
+                if (basePolicies[j] == p) revert Router_DuplicatePolicy(p);
+            }
             policies.push(IFirewallPolicy(p));
         }
     }
@@ -43,7 +80,50 @@ contract PolicyRouter {
         return policies.length;
     }
 
-    // NEW: one-time привязка модуля (legacy; not used when bound in constructor)
+    function addonPackCount() external view returns (uint256) {
+        return _enabledAddonPackIds.length;
+    }
+
+    function enabledAddonPackAt(uint256 index) external view returns (uint256) {
+        return _enabledAddonPackIds[index];
+    }
+
+    function enabledAddonPolicyAt(uint256 packId, uint256 index) external view returns (address) {
+        return _enabledAddonPoliciesByPack[packId][index];
+    }
+
+    function enabledAddonPolicyCount(uint256 packId) external view returns (uint256) {
+        return _enabledAddonPoliciesByPack[packId].length;
+    }
+
+    function enableAddonPack(uint256 packId) external {
+        if (msg.sender != owner) revert Router_Unauthorized();
+        if (isAddonPackEnabled[packId]) revert Router_PackAlreadyEnabled(packId);
+
+        IPolicyPackRegistry registry = IPolicyPackRegistry(policyPackRegistry);
+        if (!registry.isPackActive(packId)) revert Router_PackNotActive(packId);
+        if (registry.packTypeOf(packId) != PACK_TYPE_ADDON) revert Router_InvalidAddonPack(packId);
+
+        if (entitlementManager == address(0)) revert Router_EntitlementUnavailable();
+        if (!IEntitlementManager(entitlementManager).isEntitled(owner, packId)) {
+            revert Router_NotEntitled(packId);
+        }
+
+        address[] memory addonPolicies = registry.getPackPolicies(packId);
+        if (addonPolicies.length == 0) revert Router_ZeroPolicies();
+        for (uint256 i = 0; i < addonPolicies.length; i++) {
+            address policy = addonPolicies[i];
+            if (policy == address(0)) revert Router_InvalidPolicy(policy);
+            _assertPolicyUnique(policy, addonPolicies, i);
+            _enabledAddonPoliciesByPack[packId].push(policy);
+        }
+
+        isAddonPackEnabled[packId] = true;
+        _enabledAddonPackIds.push(packId);
+        emit AddonPackEnabled(packId);
+    }
+
+    // Legacy one-time binding (constructor already binds in V2).
     function setFirewallModule(address _module) external {
         if (msg.sender != owner) revert Router_Unauthorized();
         if (_module == address(0)) revert Router_ZeroAddress();
@@ -53,66 +133,143 @@ contract PolicyRouter {
         emit FirewallModuleSet(_module);
     }
 
-    /// Главная функция — агрегирует решения всех политик
     function evaluate(
         address vault,
         address to,
         uint256 value,
         bytes calldata data
     ) external view returns (Decision decision, uint48 delaySeconds) {
-        Decision finalDecision = Decision.Allow;
-        uint48 maxDelay = 0;
+        (Decision finalDecision, uint48 maxDelay) = _evaluateBasePolicies(vault, to, value, data);
+        if (finalDecision == Decision.Revert) return (Decision.Revert, 0);
 
-        uint256 len = policies.length;
-
-        for (uint256 i = 0; i < len; i++) {
-            (Decision d, uint48 ds) = policies[i].evaluate(vault, to, value, data);
-
-            if (d == Decision.Revert) {
-                return (Decision.Revert, 0);
-            }
-
-            if (d == Decision.Delay) {
-                finalDecision = Decision.Delay;
-                if (ds > maxDelay) {
-                    maxDelay = ds;
-                }
-            }
-        }
-
+        (finalDecision, maxDelay) =
+            _evaluateAddonSnapshots(vault, to, value, data, finalDecision, maxDelay);
         return (finalDecision, maxDelay);
     }
 
-    /// Уведомление политик после успешного выполнения транзакции
-    /// Нужно для stateful-политик (NewReceiverDelay)
     function notifyExecuted(
         address vault,
         address to,
         uint256 value,
         bytes calldata data
     ) external {
-        // NEW: запрет подделки post-exec
         if (msg.sender != firewallModule) revert Router_Unauthorized();
 
-        uint256 len = policies.length;
+        uint256 baseLen = policies.length;
+        for (uint256 i = 0; i < baseLen; i++) {
+            _notify(address(policies[i]), vault, to, value, data);
+        }
 
-        for (uint256 i = 0; i < len; i++) {
-            address p = address(policies[i]);
-
-            (bool ok, bytes memory ret) = p.call(
-                abi.encodeWithSelector(
-                    IFirewallPostExecPolicy.onExecuted.selector,
-                    vault,
-                    to,
-                    value,
-                    data
-                )
-            );
-
-            // NEW: не ревертить, но логировать провал hook'а
-            if (!ok) {
-                emit PostExecHookFailed(p, ret);
+        uint256 addonPackLen = _enabledAddonPackIds.length;
+        for (uint256 i = 0; i < addonPackLen; i++) {
+            uint256 packId = _enabledAddonPackIds[i];
+            address[] storage addonPolicies = _enabledAddonPoliciesByPack[packId];
+            uint256 addonPolicyLen = addonPolicies.length;
+            for (uint256 j = 0; j < addonPolicyLen; j++) {
+                _notify(addonPolicies[j], vault, to, value, data);
             }
+        }
+    }
+
+    function _notify(address policy, address vault, address to, uint256 value, bytes calldata data)
+        internal
+    {
+        (bool ok, bytes memory ret) = policy.call(
+            abi.encodeWithSelector(IFirewallPostExecPolicy.onExecuted.selector, vault, to, value, data)
+        );
+        if (!ok) emit PostExecHookFailed(policy, ret);
+    }
+
+    function _foldDecision(
+        Decision currentDecision,
+        uint48 currentDelay,
+        Decision nextDecision,
+        uint48 nextDelay
+    ) internal pure returns (Decision finalDecision, uint48 maxDelay) {
+        if (nextDecision == Decision.Revert) return (Decision.Revert, 0);
+
+        finalDecision = currentDecision;
+        maxDelay = currentDelay;
+        if (nextDecision == Decision.Delay) {
+            finalDecision = Decision.Delay;
+            if (nextDelay > maxDelay) maxDelay = nextDelay;
+        }
+    }
+
+    function _evaluateBasePolicies(address vault, address to, uint256 value, bytes calldata data)
+        internal
+        view
+        returns (Decision finalDecision, uint48 maxDelay)
+    {
+        finalDecision = Decision.Allow;
+        maxDelay = 0;
+
+        uint256 baseLen = policies.length;
+        for (uint256 i = 0; i < baseLen; i++) {
+            (Decision d, uint48 ds) = policies[i].evaluate(vault, to, value, data);
+            (finalDecision, maxDelay) = _foldDecision(finalDecision, maxDelay, d, ds);
+            if (finalDecision == Decision.Revert) return (Decision.Revert, 0);
+        }
+    }
+
+    function _evaluateAddonSnapshots(
+        address vault,
+        address to,
+        uint256 value,
+        bytes calldata data,
+        Decision initialDecision,
+        uint48 initialDelay
+    ) internal view returns (Decision finalDecision, uint48 maxDelay) {
+        finalDecision = initialDecision;
+        maxDelay = initialDelay;
+
+        uint256 addonPackLen = _enabledAddonPackIds.length;
+        for (uint256 i = 0; i < addonPackLen; i++) {
+            (finalDecision, maxDelay) = _evaluateSingleAddonSnapshot(
+                _enabledAddonPackIds[i], vault, to, value, data, finalDecision, maxDelay
+            );
+            if (finalDecision == Decision.Revert) return (Decision.Revert, 0);
+        }
+    }
+
+    function _evaluateSingleAddonSnapshot(
+        uint256 packId,
+        address vault,
+        address to,
+        uint256 value,
+        bytes calldata data,
+        Decision initialDecision,
+        uint48 initialDelay
+    ) internal view returns (Decision finalDecision, uint48 maxDelay) {
+        finalDecision = initialDecision;
+        maxDelay = initialDelay;
+
+        address[] storage addonPolicies = _enabledAddonPoliciesByPack[packId];
+        uint256 addonPolicyLen = addonPolicies.length;
+        for (uint256 j = 0; j < addonPolicyLen; j++) {
+            (Decision d, uint48 ds) = IFirewallPolicy(addonPolicies[j]).evaluate(vault, to, value, data);
+            (finalDecision, maxDelay) = _foldDecision(finalDecision, maxDelay, d, ds);
+            if (finalDecision == Decision.Revert) return (Decision.Revert, 0);
+        }
+    }
+
+    function _assertPolicyUnique(address policy, address[] memory packPolicies, uint256 index) internal view {
+        uint256 baseLen = policies.length;
+        for (uint256 i = 0; i < baseLen; i++) {
+            if (address(policies[i]) == policy) revert Router_DuplicatePolicy(policy);
+        }
+
+        uint256 enabledPackLen = _enabledAddonPackIds.length;
+        for (uint256 i = 0; i < enabledPackLen; i++) {
+            address[] storage existing = _enabledAddonPoliciesByPack[_enabledAddonPackIds[i]];
+            uint256 existingLen = existing.length;
+            for (uint256 j = 0; j < existingLen; j++) {
+                if (existing[j] == policy) revert Router_DuplicatePolicy(policy);
+            }
+        }
+
+        for (uint256 i = 0; i < index; i++) {
+            if (packPolicies[i] == policy) revert Router_DuplicatePolicy(policy);
         }
     }
 }
