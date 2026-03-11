@@ -3,60 +3,55 @@ pragma solidity ^0.8.23;
 
 import {FirewallModule} from "./FirewallModule.sol";
 import {PolicyRouter} from "./PolicyRouter.sol";
+import {IPolicyPackRegistry} from "./interfaces/IPolicyPackRegistry.sol";
 
 error Factory_ZeroAddress();
-error Factory_ZeroPolicies();
-error Factory_InvalidPreset(uint8 presetId);
+error Factory_InvalidBasePack(uint256 packId);
+error Factory_InactiveBasePack(uint256 packId);
 
 /// @notice MVP deploy-based factory. No admin powers over wallets after creation.
 contract FirewallFactory {
-    address[] public policiesConservative;
-    address[] public policiesDefi;
+    uint8 internal constant PACK_TYPE_BASE = 0;
+
+    uint256 public constant BASE_PACK_CONSERVATIVE = 0;
+    uint256 public constant BASE_PACK_DEFI = 1;
+
+    address public immutable policyPackRegistry;
+    address public immutable entitlementManager;
 
     event WalletCreated(
         address indexed owner,
         address indexed wallet,
         address indexed router,
         address recovery,
-        uint8 presetId
+        uint256 basePackId
     );
 
-    constructor(address[] memory conservative_, address[] memory defi_) {
-        _setPolicies(policiesConservative, conservative_);
-        _setPolicies(policiesDefi, defi_);
+    constructor(address policyPackRegistry_, address entitlementManager_) {
+        if (policyPackRegistry_ == address(0)) revert Factory_ZeroAddress();
+        policyPackRegistry = policyPackRegistry_;
+        entitlementManager = entitlementManager_;
     }
 
-    function _setPolicies(address[] storage dst, address[] memory src) internal {
-        if (src.length == 0) revert Factory_ZeroPolicies();
-        for (uint256 i = 0; i < src.length; i++) {
-            if (src[i] == address(0)) revert Factory_ZeroAddress();
-            dst.push(src[i]);
-        }
-    }
-
-    function createWallet(address owner, address recovery, uint8 presetId)
+    function createWallet(address owner, address recovery, uint256 basePackId)
         external
         returns (address wallet)
     {
         if (owner == address(0)) revert Factory_ZeroAddress();
         if (recovery == address(0)) revert Factory_ZeroAddress();
 
-        FirewallModule m = new FirewallModule();
-        address[] storage src = _policiesForPreset(presetId);
-        address[] memory policiesMem = new address[](src.length);
-        for (uint256 i = 0; i < src.length; i++) {
-            policiesMem[i] = src[i];
+        IPolicyPackRegistry registry = IPolicyPackRegistry(policyPackRegistry);
+        if (!registry.isPackActive(basePackId)) revert Factory_InactiveBasePack(basePackId);
+        if (registry.packTypeOf(basePackId) != PACK_TYPE_BASE) {
+            revert Factory_InvalidBasePack(basePackId);
         }
-        PolicyRouter router = new PolicyRouter(owner, address(m), policiesMem);
+
+        FirewallModule m = new FirewallModule();
+        PolicyRouter router =
+            new PolicyRouter(owner, address(m), policyPackRegistry, entitlementManager, basePackId);
         m.init(address(router), owner, recovery);
         wallet = address(m);
 
-        emit WalletCreated(owner, wallet, address(router), recovery, presetId);
-    }
-
-    function _policiesForPreset(uint8 presetId) internal view returns (address[] storage) {
-        if (presetId == 0) return policiesConservative;
-        if (presetId == 1) return policiesDefi;
-        revert Factory_InvalidPreset(presetId);
+        emit WalletCreated(owner, wallet, address(router), recovery, basePackId);
     }
 }

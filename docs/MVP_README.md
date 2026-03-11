@@ -3,7 +3,7 @@
 ## Product Summary
 Firewall Vault is a non-custodial on-chain transaction firewall wallet for EVM networks.
 
-A user creates a dedicated wallet contract (`FirewallModule`) via `FirewallFactory`. Every outgoing action from that wallet is checked by a `PolicyRouter`, which aggregates policy decisions (`Allow`, `Delay`, `Revert`) from a preset policy set.
+A user creates a dedicated wallet contract (`FirewallModule`) via `FirewallFactory`. Every outgoing action from that wallet is checked by a `PolicyRouter`, which aggregates policy decisions (`Allow`, `Delay`, `Revert`) from a fixed base pack plus optional enabled add-on snapshots.
 
 The MVP goal is hard on-chain enforcement for common drain vectors while keeping daily DeFi usage possible.
 
@@ -13,21 +13,28 @@ The MVP goal is hard on-chain enforcement for common drain vectors while keeping
 - Base fork (simulation against Base state)
 
 ## Core Components
-- `FirewallFactory`: creates new user wallets and binds them to a preset policy array.
+- `PolicyPackRegistry`: curated on-chain catalog of base/add-on policy packs.
+- `FirewallFactory`: creates new user wallets and binds them to a base pack id.
 - `FirewallModule`: user wallet with `executeNow`, `schedule`, `executeScheduled`, `cancelScheduled`, `getScheduled`.
 - `PolicyRouter`: evaluates all policies for each action and applies final decision rules:
   - any policy `Revert` => final `Revert`
   - otherwise, if any policy `Delay` => final `Delay` with max delay
   - otherwise => `Allow`
-- Policies (MVP presets):
+- `SimpleEntitlementManager` / `IEntitlementManager`: minimal hook for add-on access control.
+- Policies (MVP base packs):
   - `InfiniteApprovalPolicy`
   - `LargeTransferDelayPolicy`
   - `NewReceiverDelayPolicy`
 
-## Presets
-Preset IDs are used at wallet creation:
+## Base packs
+Base pack IDs are used at wallet creation:
 - Preset `0` = Conservative
 - Preset `1` = DeFi Trader
+
+Base pack is permanent per wallet and cannot be removed.
+Add-on packs can only add extra checks and cannot weaken base protections.
+Enabled add-ons are snapshotted into the wallet router at enable time.
+Later registry deactivation only blocks new enablements and does not disable already-enabled wallets.
 
 ### Preset 0: Conservative
 Included policies:
@@ -105,9 +112,9 @@ Security posture:
 - Review preset wiring in deployment scripts under `packages/contracts/script/`.
 - Verify deployed addresses:
   - from deployment outputs / logs,
-  - by reading factory arrays on-chain:
-    - `policiesConservative(i)`
-    - `policiesDefi(i)`
+  - by reading registry packs on-chain:
+    - `getPackPolicies(packId)`
+    - `isPackActive(packId)`
 - Run smoke script to produce concrete wallet/router/txId traces for manual verification.
 
 ## Quickstart
@@ -118,7 +125,7 @@ forge build
 forge test -vvv
 ```
 
-Deploy factory presets on Base (example):
+Deploy V2 factory on Base (example):
 
 ```bash
 forge script script/DeployFactoryBaseMainnet.s.sol:DeployFactoryBaseMainnet \

@@ -38,6 +38,8 @@ Firewall Vault is designed to protect against patterns such as:
       ↓
     PolicyRouter
       ↓
+    PolicyPackRegistry (base + add-on packs)
+      ↓
     Policies
       ↓
     ALLOW / DELAY / REVERT
@@ -49,6 +51,8 @@ More details:
 - `FirewallModule`
 - `PolicyRouter`
 - `FirewallFactory`
+- `PolicyPackRegistry`
+- `SimpleEntitlementManager` (minimal entitlement hook implementation)
 
 ## Policies
 - `InfiniteApprovalPolicy`
@@ -56,9 +60,31 @@ More details:
 - `NewReceiverDelayPolicy`
 - `UnknownContractBlockPolicy`
 
-## Presets
+## V2 Pack model
+- Base pack is selected at wallet creation and is permanent.
+- Add-on packs are curated and optional, and can only be enabled with entitlement.
+- Add-on policies are snapshotted into the wallet router at enable time.
+- Effective enforcement is: `Base Pack + Enabled Add-on Snapshots`.
+- Final router decision priority remains: `REVERT > DELAY > ALLOW`.
+
+### Base packs (unchanged semantics)
 - `0` — Conservative
 - `1` — DeFi Trader
+
+Both base packs keep the same mandatory base protections:
+- `InfiniteApprovalPolicy`
+- `LargeTransferDelayPolicy`
+- `NewReceiverDelayPolicy`
+
+These base protections are always active and cannot be removed by premium/add-ons.
+
+Registry deactivation behavior:
+- can block future enablements of that add-on pack
+- does not disable already-enabled add-on protections in existing wallets
+
+Duplicate policy behavior:
+- router deployment reverts if base pack contains duplicate policy addresses
+- enabling an add-on reverts if any policy address duplicates base or previously enabled add-on policies
 
 ## Network
 Current MVP deployment:
@@ -120,3 +146,4 @@ Main contract area:
 - [`../PROJECT_HOME/README.md`](../PROJECT_HOME/README.md)
 - [`../PROJECT_HOME/ARCHITECTURE.md`](../PROJECT_HOME/ARCHITECTURE.md)
 - [`../PROJECT_HOME/SECURITY_MODEL.md`](../PROJECT_HOME/SECURITY_MODEL.md)
+- [`./DEPLOYMENT.md`](./DEPLOYMENT.md)
