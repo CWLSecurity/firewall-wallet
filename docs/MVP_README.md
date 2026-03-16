@@ -1,157 +1,160 @@
-# Firewall Vault MVP
+# Firewall Vault MVP (Current v1 / v1.5)
 
-## Product Summary
-Firewall Vault is a non-custodial on-chain transaction firewall wallet for EVM networks.
+## Product summary
+Firewall Vault is a non-custodial on-chain execution firewall.
 
-A user creates a dedicated wallet contract (`FirewallModule`) via `FirewallFactory`. Every outgoing action from that wallet is checked by a `PolicyRouter`, which aggregates policy decisions (`Allow`, `Delay`, `Revert`) from a fixed base pack plus optional enabled add-on snapshots.
+A signer wallet authorizes owner actions, while `FirewallModule` executes through `PolicyRouter` under deterministic policy enforcement.
 
-The MVP goal is hard on-chain enforcement for common drain vectors while keeping daily DeFi usage possible.
+## Core model
+- `FirewallFactory` creates wallet + router bound to base pack.
+- `FirewallModule` supports:
+  - `executeNow`
+  - `schedule`
+  - `executeScheduled`
+  - `cancelScheduled`
+  - `getScheduled`
+- `PolicyRouter` folds policy outcomes as:
+  - `REVERT > DELAY > ALLOW`
 
-## Networks Supported
-- Base (primary / first production target)
-- Local Anvil (development and smoke checks)
-- Base fork (simulation against Base state)
+## Current pack lineup
+Base packs:
+- Base `0` Conservative
+- Base `1` DeFi Trader
 
-## Core Components
-- `PolicyPackRegistry`: curated on-chain catalog of base/add-on policy packs.
-- `FirewallFactory`: creates new user wallets and binds them to a base pack id.
-- `FirewallModule`: user wallet with `executeNow`, `schedule`, `executeScheduled`, `cancelScheduled`, `getScheduled`.
-- `PolicyRouter`: evaluates all policies for each action and applies final decision rules:
-  - any policy `Revert` => final `Revert`
-  - otherwise, if any policy `Delay` => final `Delay` with max delay
-  - otherwise => `Allow`
-- `SimpleEntitlementManager` / `IEntitlementManager`: minimal hook for add-on access control.
-- Policies (MVP base packs):
-  - `InfiniteApprovalPolicy`
-  - `LargeTransferDelayPolicy`
-  - `NewReceiverDelayPolicy`
+Add-ons:
+- Add-on `2` Approval Hardening
+- Add-on `3` New Receiver 24h Delay
+- Add-on `4` Large Transfer 24h Delay
 
-## Base packs
-Base pack IDs are used at wallet creation:
-- Preset `0` = Conservative
-- Preset `1` = DeFi Trader
+## Base 0 — Conservative
+Policies:
+- `InfiniteApprovalPolicy(allowPermit=false)`
+- `LargeTransferDelayPolicy(...)`
+- `NewReceiverDelayPolicy(...)`
 
-Base pack is permanent per wallet and cannot be removed.
-Add-on packs can only add extra checks and cannot weaken base protections.
-Enabled add-ons are snapshotted into the wallet router at enable time.
-Later registry deactivation only blocks new enablements and does not disable already-enabled wallets.
+Behavior summary:
+- strict non-zero approval/increaseAllowance blocking,
+- strict operator enable block,
+- first receiver delays for EOAs/contracts,
+- large transfer delays.
 
-### Preset 0: Conservative
-Included policies:
+## Base 1 — DeFi Trader
+Policies:
+- `DeFiApprovalPolicy(...)`
+- `ApprovalToNewSpenderDelayPolicy(...)`
+- `Erc20FirstNewRecipientDelayPolicy(...)`
+- `LargeTransferDelayPolicy(...)`
+- `NewEOAReceiverDelayPolicy(...)`
+
+Behavior summary:
+- normal contract interaction remains generally usable,
+- first non-zero approval to new contract spender delayed,
+- non-zero approval to EOA spender blocked,
+- first ERC20 recipient delayed,
+- first new EOA transfer delayed,
+- `setApprovalForAll(true)` blocked.
+
+## Add-on 2 — Approval Hardening
 - `InfiniteApprovalPolicy(approvalLimit=max, allowPermit=false)`
+- Strict approval protection. Blocks risky token approval patterns including permit-style approvals.
+
+## Add-on 3 — New Receiver 24h Delay
+- `NewReceiverDelayPolicy(delay=86400s)`
+- Delays the first transfer to any new receiver by 24 hours.
+
+## Add-on 4 — Large Transfer 24h Delay
+- `LargeTransferDelayPolicy(ETH=1 ether, ERC20=1 unit, delay=86400s)`
+- Delays large ETH and ERC20 transfers by 24 hours.
+Policies:
+- `InfiniteApprovalPolicy(allowPermit=false)`
 - `LargeTransferDelayPolicy(...)`
 - `NewReceiverDelayPolicy(...)`
 
-Key behavior:
-- ERC20 `transfer` / `transferFrom` to a new receiver: `Delay` (until receiver becomes known after successful execution).
-- Large ERC20 transfer amount: `Delay` (amount above configured threshold).
-- `approve(spender, type(uint256).max)`: `Revert`.
-- `increaseAllowance(spender, x)`: allowed unless `x` crosses configured policy limit (with current max-limit config this stays allowed for practical values).
-- `setApprovalForAll(operator, true)`: `Revert`.
-- `permit(...)`: `Revert` (blocked in Preset 0).
+Behavior summary:
+- adds stricter approval and delay controls on top of selected base pack.
 
-### Preset 1: DeFi Trader
-Included policies:
-- `InfiniteApprovalPolicy(approvalLimit=max, allowPermit=true)`
-- `LargeTransferDelayPolicy(...)`
-- `NewReceiverDelayPolicy(...)`
+## Security updates included
+### Phase 1
+- scheduled execution now enforces current policy at execution time:
+  - current `Revert` => block,
+  - current `Delay` => must satisfy `max(originalUnlockTime, createdAt + currentDelaySeconds)`,
+  - current `Allow` => original unlock still applies,
+- strict approval hardening applied.
 
-Key behavior:
-- ERC20 `transfer` / `transferFrom` to a new receiver: `Delay`.
-- Large ERC20 transfer amount: `Delay`.
-- `approve(spender, type(uint256).max)`: `Revert`.
-- `increaseAllowance(spender, x)`: allowed unless `x` crosses configured policy limit (with current max-limit config this stays allowed for practical values).
-- `setApprovalForAll(operator, true)`: `Revert`.
-- `permit(...)`: allowed by `InfiniteApprovalPolicy` in Preset 1.
+### Phase 2
+- DeFi compensating spender/recipient delay controls added.
+- known spender/recipient state is token-scoped to prevent cross-token priming bypass.
 
-Note: final router decision is the aggregate across all policies. Even when permit is allowed by `InfiniteApprovalPolicy`, another policy can still return `Delay` for the same call context.
+### Phase 3A
+- large transfer comparator hardened to `>=`,
+- split ETH/ERC20 threshold configuration.
 
-## Delayed Transactions
-How delay works:
-1. User calls `schedule(to, value, data)` on their `FirewallModule`.
-2. Router evaluates the call:
-   - `Revert` => rejected immediately
-   - `Allow` => cannot be scheduled (use `executeNow`)
-   - `Delay` => stored with unlock time and returned `txId`
-3. After unlock time, user calls `executeScheduled(txId)`.
-4. Optional cancellation before execution: `cancelScheduled(txId)`.
+## Large transfer policy caveat
+`LargeTransferDelayPolicy` covers only:
+- native ETH tx value,
+- ERC20 `transfer`,
+- ERC20 `transferFrom`.
 
-How to inspect delayed txs:
-- On-chain read: `FirewallModule.getScheduled(txId)` returns:
-  - `exists`, `executed`, `to`, `value`, `unlockTime`, `dataHash`
-- Events for indexing and monitoring:
-  - `Scheduled` / `TransactionScheduled`
-  - `Executed` / `TransactionExecuted`
-  - `Cancelled` / `TransactionCancelled`
+ERC20 threshold is raw-unit based (`ERC20_THRESHOLD_UNITS`), not economically normalized.
 
-## Threat Model Summary
-Designed to reduce impact from:
-- malicious infinite approvals,
-- unsafe operator approvals,
-- first-time receiver risk (delay window),
-- large transfer risk (delay window).
+## Queue behavior
+Delay flow:
+1. `schedule(...)` stores delayed tx with unlock time.
+2. `executeScheduled(txId)` re-checks current policy before execution.
+3. Execution requires:
+   - current decision is not `Revert`,
+   - and if current decision is `Delay`, current time is at least
+     `max(originalUnlockTime, createdAt + currentDelaySeconds)`.
+4. `cancelScheduled(txId)` removes queued tx.
 
-Security posture:
-- enforcement is on-chain,
-- no custody transfer,
-- policy checks happen before wallet execution,
-- delayed path creates reaction time for owner.
+Queue discoverability helpers:
+- `nextNonce()`
+- `scheduledTxIdByNonce(nonce)`
 
-## Non-Goals and Caveats (MVP)
-- Not an anti-phishing UI layer.
-- Not a guarantee against all social engineering.
-- Not an upgradeable safety engine (core is immutable by design intent).
-- Delay is not prevention if user intentionally executes malicious calls after unlock.
-- Policies are explicit and deterministic; no off-chain ML/risk oracle.
+## Monetization foundations
+B2C:
+- add-on packs are one-time permanent snapshots once enabled.
+- optional execution fee is supported on:
+  - `executeNow`
+  - `executeScheduled`
+- `schedule` does not charge execution fee.
+- fee uses module-measured gas and `tx.gasprice`:
+  - `feeDue = (gasUsed * tx.gasprice * feePpm) / 1_000_000`,
+  - `gasUsed = gasStart - gasleft()`.
+- fee updates are timelocked and publicly introspectable.
+- immutable fee-rate hard cap is `0.5%` of gas cost.
+- fee collection is best-effort and does not revert protected execution if transfer fails.
 
-## How To Verify Safety
-- Run tests locally:
-  - `forge build`
-  - `forge test -vvv`
-- Inspect open-source policy logic directly under `packages/contracts/src/`.
-- Review preset wiring in deployment scripts under `packages/contracts/script/`.
-- Verify deployed addresses:
-  - from deployment outputs / logs,
-  - by reading registry packs on-chain:
-    - `getPackPolicies(packId)`
-    - `isPackActive(packId)`
-- Run smoke script to produce concrete wallet/router/txId traces for manual verification.
+B2B:
+- `ProtocolRegistry` supports protocol id <-> target mapping.
+- `FirewallModule` emits protocol interaction events for known protocol targets.
+- `TrustedVaultRegistry` supports recognized vault checks.
+- `FirewallFactory.isFactoryVault(address)` supports factory-origin vault checks.
+- no live on-chain protocol billing is implemented yet.
+- protocol/trusted-vault/factory-origin primitives are not policy/security boundaries by default.
 
-## Quickstart
-From `packages/contracts`:
+## Metadata and pack reconstruction (current)
+Policy metadata required for admission:
+- `policyKey`
+- `policyName`
+- `policyDescription`
+- `policyConfigVersion`
+- `policyConfig`
 
-```bash
-forge build
-forge test -vvv
-```
+Pack reconstruction primitives:
+- `packCount()` / `packIdAt(index)`
+- `getPackMeta(packId)` => `active`, `packType`, `metadata`, `slug`, `version`, `policyCount`
+- `getPackPolicies(packId)`
 
-Deploy V2 factory on Base (example):
+`UnknownContractBlockPolicy` caveat:
+- allowlist mapping is non-enumerable on-chain;
+- full allowlist reconstruction requires indexing `AllowedSet` events.
 
-```bash
-forge script script/DeployFactoryBaseMainnet.s.sol:DeployFactoryBaseMainnet \
-  --rpc-url $BASE_RPC_URL \
-  --private-key $DEPLOYER_PK \
-  --broadcast
-```
-
-Run MVP smoke script on Anvil (self-deploy path):
-
-```bash
-forge script script/SmokeMvpBase.s.sol:SmokeMvpBase \
-  --rpc-url http://127.0.0.1:8545 \
-  --private-key $DEPLOYER_PK \
-  --broadcast -vvv
-```
-
-Run MVP smoke script on Base fork (attach or self-deploy):
-
-```bash
-forge script script/SmokeMvpBase.s.sol:SmokeMvpBase \
-  --fork-url $BASE_RPC_URL \
-  --private-key $DEPLOYER_PK \
-  --broadcast -vvv
-```
-
-Optional env vars for smoke script:
-- `MVP_FACTORY`: existing factory address to attach instead of deploying a new one.
-- `MVP_RECOVERY`: recovery address (default is deployer).
+## Canonical references
+- `README.md`
+- `SECURITY_MODEL.md`
+- `PACK_MATRIX.md`
+- `MONETIZATION.md`
+- `VERIFY_DEPLOYMENT.md`
+- `DEPLOYMENT.md`
+- `DEPLOYMENT_STATUS.md`
