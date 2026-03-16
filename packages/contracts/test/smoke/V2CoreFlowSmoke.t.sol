@@ -8,7 +8,7 @@ import {PolicyRouter} from "../../src/PolicyRouter.sol";
 import {MockReceiver} from "../../src/mocks/MockReceiver.sol";
 
 contract V2CoreFlowSmoke is SmokeBase {
-    uint256 internal constant SMALL_VALUE = 0.1 ether;
+    uint256 internal constant SMALL_VALUE = 0.01 ether;
 
     function setUp() public {
         _deployV2WithRealBasePacks();

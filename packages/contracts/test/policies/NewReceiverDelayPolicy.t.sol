@@ -6,9 +6,20 @@ import "forge-std/Test.sol";
 import {NewReceiverDelayPolicy} from "../../src/policies/NewReceiverDelayPolicy.sol";
 import {Decision} from "../../src/interfaces/IFirewallPolicy.sol";
 
+contract MockVaultWithRouterStrict {
+    address public immutable router;
+
+    constructor(address router_) {
+        router = router_;
+    }
+}
+
 contract NewReceiverDelayPolicyTest is Test {
     NewReceiverDelayPolicy policy;
 
+    address router = address(0xAAAA);
+    address attacker = address(0xBAD1);
+    MockVaultWithRouterStrict vault;
     address receiver1 = address(0xCAFE);
     address receiver2 = address(0xBEEF);
     address token = address(0x1000);
@@ -17,6 +28,7 @@ contract NewReceiverDelayPolicyTest is Test {
 
     function setUp() public {
         policy = new NewReceiverDelayPolicy(DELAY);
+        vault = new MockVaultWithRouterStrict(router);
     }
 
     function test_Delay_OnReceiver1() public view {
@@ -87,5 +99,24 @@ contract NewReceiverDelayPolicyTest is Test {
         if (uint256(decision) == uint256(Decision.Delay)) {
             assertEq(uint256(delay), uint256(DELAY));
         }
+    }
+
+    function test_Rejects_UnauthorizedOnExecutedCaller() public {
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSignature("ReceiverDelay_UnauthorizedHookCaller()"));
+        policy.onExecuted(address(vault), receiver1, 0, "");
+    }
+
+    function test_ReceiverBecomesKnown_AfterAuthorizedExecutionHook() public {
+        (Decision d1, uint48 delay1) = policy.evaluate(address(vault), receiver1, 0, "");
+        assertEq(uint256(d1), uint256(Decision.Delay));
+        assertEq(delay1, DELAY);
+
+        vm.prank(router);
+        policy.onExecuted(address(vault), receiver1, 0, "");
+
+        (Decision d2, uint48 delay2) = policy.evaluate(address(vault), receiver1, 0, "");
+        assertEq(uint256(d2), uint256(Decision.Allow));
+        assertEq(delay2, 0);
     }
 }

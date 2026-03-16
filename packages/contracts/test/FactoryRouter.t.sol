@@ -121,10 +121,13 @@ contract FactoryRouterTest is Test {
 
     function test_FactoryCreatesFreshRouterPerWallet() public {
         (FirewallFactory f,) = _deployFactory();
-        (, address r1) = _createWallet(f, BASE_PACK_CONSERVATIVE);
-        (, address r2) = _createWallet(f, BASE_PACK_DEFI);
+        (address w1, address r1) = _createWallet(f, BASE_PACK_CONSERVATIVE);
+        (address w2, address r2) = _createWallet(f, BASE_PACK_DEFI);
 
         assertTrue(r1 != r2);
+        assertTrue(f.isFactoryVault(w1));
+        assertTrue(f.isFactoryVault(w2));
+        assertFalse(f.isFactoryVault(address(0xBEEF)));
     }
 
     function test_NotifyExecuted_onlyWallet() public {
