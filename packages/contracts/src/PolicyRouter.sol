@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {Decision, IFirewallPolicy, IFirewallPostExecPolicy} from "./interfaces/IFirewallPolicy.sol";
 import {IPolicyPackRegistry} from "./interfaces/IPolicyPackRegistry.sol";
 import {IEntitlementManager} from "./interfaces/IEntitlementManager.sol";
+import {IPolicyIntrospection, PolicyConfigEntry} from "./interfaces/IPolicyIntrospection.sol";
 
 error Router_ZeroPolicies();
 error Router_InvalidPolicy(address policy);
@@ -17,6 +18,8 @@ error Router_PackAlreadyEnabled(uint256 packId);
 error Router_NotEntitled(uint256 packId);
 error Router_EntitlementUnavailable();
 error Router_DuplicatePolicy(address policy);
+error Router_PolicyMissingMetadata(address policy);
+error Router_InvalidPolicyMetadata(address policy);
 
 contract PolicyRouter {
     uint8 internal constant PACK_TYPE_BASE = 0;
@@ -69,6 +72,8 @@ contract PolicyRouter {
         for (uint256 i = 0; i < len; i++) {
             address p = basePolicies[i];
             if (p == address(0)) revert Router_InvalidPolicy(p);
+            if (p.code.length == 0) revert Router_InvalidPolicy(p);
+            _assertPolicyMetadata(p);
             for (uint256 j = 0; j < i; j++) {
                 if (basePolicies[j] == p) revert Router_DuplicatePolicy(p);
             }
@@ -114,6 +119,8 @@ contract PolicyRouter {
         for (uint256 i = 0; i < addonPolicies.length; i++) {
             address policy = addonPolicies[i];
             if (policy == address(0)) revert Router_InvalidPolicy(policy);
+            if (policy.code.length == 0) revert Router_InvalidPolicy(policy);
+            _assertPolicyMetadata(policy);
             _assertPolicyUnique(policy, addonPolicies, i);
             _enabledAddonPoliciesByPack[packId].push(policy);
         }
@@ -270,6 +277,56 @@ contract PolicyRouter {
 
         for (uint256 i = 0; i < index; i++) {
             if (packPolicies[i] == policy) revert Router_DuplicatePolicy(policy);
+        }
+    }
+
+    function _assertPolicyMetadata(address policy) internal view {
+        IPolicyIntrospection introspection = IPolicyIntrospection(policy);
+
+        bytes32 key;
+        try introspection.policyKey() returns (bytes32 policyKey_) {
+            key = policyKey_;
+        } catch {
+            revert Router_PolicyMissingMetadata(policy);
+        }
+
+        string memory name;
+        try introspection.policyName() returns (string memory policyName_) {
+            name = policyName_;
+        } catch {
+            revert Router_PolicyMissingMetadata(policy);
+        }
+
+        string memory description;
+        try introspection.policyDescription() returns (string memory policyDescription_) {
+            description = policyDescription_;
+        } catch {
+            revert Router_PolicyMissingMetadata(policy);
+        }
+
+        uint16 version;
+        try introspection.policyConfigVersion() returns (uint16 v) {
+            version = v;
+        } catch {
+            revert Router_PolicyMissingMetadata(policy);
+        }
+
+        PolicyConfigEntry[] memory entries;
+        try introspection.policyConfig() returns (PolicyConfigEntry[] memory cfg) {
+            entries = cfg;
+        } catch {
+            revert Router_PolicyMissingMetadata(policy);
+        }
+
+        if (
+            key == bytes32(0) || bytes(name).length == 0 || bytes(description).length == 0 || version == 0
+                || entries.length == 0
+        ) {
+            revert Router_InvalidPolicyMetadata(policy);
+        }
+
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].key == bytes32(0)) revert Router_InvalidPolicyMetadata(policy);
         }
     }
 }

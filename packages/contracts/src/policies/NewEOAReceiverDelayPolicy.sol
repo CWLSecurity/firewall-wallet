@@ -15,12 +15,11 @@ import {IFirewallModuleView} from "../interfaces/IFirewallModuleView.sol";
 
 error ReceiverDelay_UnauthorizedHookCaller();
 
-/// @notice Delay transfers to new receivers.
-///         First time → Delay
-///         After successful execution → receiver becomes known.
-contract NewReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPolicyIntrospection {
+/// @notice Delay first transfer to a new EOA receiver.
+///         Calls to contracts are allowed immediately.
+contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPolicyIntrospection {
     uint48 public immutable DELAY_SECONDS;
-    bool public constant EOA_ONLY = false;
+    bool public constant EOA_ONLY = true;
 
     // vault => receiver => known
     mapping(address => mapping(address => bool)) public knownReceivers;
@@ -30,15 +29,15 @@ contract NewReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPo
     }
 
     function policyKey() external pure returns (bytes32) {
-        return keccak256("new-receiver-delay-v1");
+        return keccak256("new-eoa-receiver-delay-v1");
     }
 
     function policyName() external pure returns (string memory) {
-        return "NewReceiverDelayPolicy";
+        return "NewEOAReceiverDelayPolicy";
     }
 
     function policyDescription() external pure returns (string memory) {
-        return "Delays first transfer target per vault for both EOAs and contracts.";
+        return "Delays first transfer to a new EOA receiver; contract receivers are allowed immediately.";
     }
 
     function policyConfigVersion() external pure returns (uint16) {
@@ -62,7 +61,7 @@ contract NewReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPo
         entries[2] = PolicyConfigEntry({
             key: bytes32("receiver_scope"),
             valueType: PolicyConfigValueType.Bytes32,
-            value: bytes32("all_receivers"),
+            value: bytes32("eoa_receivers"),
             unit: bytes32("mode")
         });
     }
@@ -74,6 +73,12 @@ contract NewReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPo
         bytes calldata data
     ) external view returns (Decision decision, uint48 delayOut) {
         address receiver = _receiverFromCall(to, data);
+
+        // Only first-time EOA receivers are delayed.
+        if (receiver.code.length > 0) {
+            return (Decision.Allow, 0);
+        }
+
         if (knownReceivers[vault][receiver]) {
             return (Decision.Allow, 0);
         }
@@ -90,7 +95,9 @@ contract NewReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPo
     ) external {
         _assertTrustedHookCaller(vault);
         address receiver = _receiverFromCall(to, data);
-        knownReceivers[vault][receiver] = true;
+        if (receiver.code.length == 0) {
+            knownReceivers[vault][receiver] = true;
+        }
     }
 
     function _receiverFromCall(address to, bytes calldata data) internal pure returns (address receiver) {

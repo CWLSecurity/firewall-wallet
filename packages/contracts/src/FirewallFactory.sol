@@ -18,6 +18,8 @@ contract FirewallFactory {
 
     address public immutable policyPackRegistry;
     address public immutable entitlementManager;
+    address public immutable feeConfigAdmin;
+    mapping(address => bool) public isFactoryVault;
 
     event WalletCreated(
         address indexed owner,
@@ -31,6 +33,7 @@ contract FirewallFactory {
         if (policyPackRegistry_ == address(0)) revert Factory_ZeroAddress();
         policyPackRegistry = policyPackRegistry_;
         entitlementManager = entitlementManager_;
+        feeConfigAdmin = msg.sender;
     }
 
     function createWallet(address owner, address recovery, uint256 basePackId)
@@ -49,8 +52,9 @@ contract FirewallFactory {
         FirewallModule m = new FirewallModule();
         PolicyRouter router =
             new PolicyRouter(owner, address(m), policyPackRegistry, entitlementManager, basePackId);
-        m.init(address(router), owner, recovery);
+        m.init(address(router), owner, recovery, feeConfigAdmin, address(0));
         wallet = address(m);
+        isFactoryVault[wallet] = true;
 
         emit WalletCreated(owner, wallet, address(router), recovery, basePackId);
     }
