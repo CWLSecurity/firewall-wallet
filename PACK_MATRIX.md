@@ -1,10 +1,10 @@
-# Firewall Vault v1 Pack Matrix (Canonical)
+# Firewall Vault Pack Matrix (Canonical)
 
-Last updated: 2026-03-16
+Last updated: 2026-03-24
 
-## Pack taxonomy
+## Pack Taxonomy
 Base packs:
-- Base `0` Conservative
+- Base `0` Conservative (`Vault Safe` in UI)
 - Base `1` DeFi Trader
 
 Add-on packs:
@@ -13,52 +13,37 @@ Add-on packs:
 - Add-on `4` Large Transfer 24h Delay
 
 ## Matrix
-| Pack | Type | Included policies | Key parameters (defaults) | Intended user profile | Core caveats |
+| Pack | Type | Included policies | Key parameters (defaults) | Intended profile | Core caveats |
 |---|---|---|---|---|---|
-| Conservative (`0`) | BASE | `InfiniteApprovalPolicy`, `LargeTransferDelayPolicy`, `NewReceiverDelayPolicy` | `InfiniteApprovalPolicy(allowPermit=false)`; `LargeTransferDelayPolicy(ETH_THRESHOLD_WEI=0.05 ether, ERC20_THRESHOLD_UNITS=0.05 ether, DELAY_SECONDS=3600)`; `NewReceiverDelayPolicy(DELAY_SECONDS=3600)` | Users prioritizing strict baseline safety | Higher friction by design; first new receiver delays include contracts |
-| DeFi Trader (`1`) | BASE | `DeFiApprovalPolicy`, `ApprovalToNewSpenderDelayPolicy`, `Erc20FirstNewRecipientDelayPolicy`, `LargeTransferDelayPolicy`, `NewEOAReceiverDelayPolicy` | `DeFiApprovalPolicy(ALLOW_MAX_APPROVAL=true, ALLOW_PERMIT=true, BLOCK_SET_APPROVAL_FOR_ALL_TRUE=true)`; `ApprovalToNewSpenderDelayPolicy(DELAY_SECONDS=1800)`; `Erc20FirstNewRecipientDelayPolicy(DELAY_SECONDS=1800)`; `LargeTransferDelayPolicy(ETH_THRESHOLD_WEI=0.25 ether, ERC20_THRESHOLD_UNITS=0.25 ether, DELAY_SECONDS=1800)`; `NewEOAReceiverDelayPolicy(DELAY_SECONDS=1800)` | Active DeFi users needing lower friction contract interactions | First-risk controls are token-scoped (`vault+token+spender/recipient`); first new EOA transfer paths are still delayed |
-| Approval Hardening (`2`) | ADDON | `InfiniteApprovalPolicy` | `InfiniteApprovalPolicy(approvalLimit=max, allowPermit=false)` | Strict approval protection. Blocks risky token approval patterns including permit-style approvals. | Add-on is persistent once enabled in current router |
-| New Receiver 24h Delay (`3`) | ADDON | `NewReceiverDelayPolicy` | `NewReceiverDelayPolicy(DELAY_SECONDS=86400)` | Delays the first transfer to any new receiver by 24 hours. | Add-on is persistent once enabled in current router |
-| Large Transfer 24h Delay (`4`) | ADDON | `LargeTransferDelayPolicy` | `LargeTransferDelayPolicy(ETH_THRESHOLD_WEI=1 ether, ERC20_THRESHOLD_UNITS=1, DELAY_SECONDS=86400)` | Delays large ETH and ERC20 transfers by 24 hours. | Add-on is persistent once enabled in current router |
+| Conservative (`0`) | BASE | `InfiniteApprovalPolicy`, `LargeTransferDelayPolicy`, `NewReceiverDelayPolicy` | `InfiniteApprovalPolicy(allowPermit=false)`; `LargeTransferDelayPolicy(ETH_THRESHOLD_WEI=0.05 ether, ERC20_THRESHOLD_UNITS=0.05 ether, DELAY_SECONDS=3600)`; `NewReceiverDelayPolicy(DELAY_SECONDS=3600)` | Strict baseline safety | Higher friction; first new receiver delay includes contracts |
+| DeFi Trader (`1`) | BASE | `DeFiApprovalPolicy`, `ApprovalToNewSpenderDelayPolicy`, `Erc20FirstNewRecipientDelayPolicy`, `LargeTransferDelayPolicy`, `NewEOAReceiverDelayPolicy` | `DeFiApprovalPolicy(ALLOW_MAX_APPROVAL=true, ALLOW_PERMIT=true, BLOCK_SET_APPROVAL_FOR_ALL_TRUE=true)`; `ApprovalToNewSpenderDelayPolicy(DELAY_SECONDS=1800)`; `Erc20FirstNewRecipientDelayPolicy(DELAY_SECONDS=1800)`; `LargeTransferDelayPolicy(ETH_THRESHOLD_WEI=0.25 ether, ERC20_THRESHOLD_UNITS=0.25 ether, DELAY_SECONDS=1800)`; `NewEOAReceiverDelayPolicy(DELAY_SECONDS=1800, unknown_contract_selector_action=delay_first_call)` | Active DeFi usage with guardrails | First-risk controls are token-scoped (`vault+token+spender/recipient`); first new EOA transfer remains delayed; first unknown-selector call to a new contract target is delayed |
+| Approval Hardening (`2`) | ADDON | `InfiniteApprovalPolicy` | strict approval guard profile (`allowPermit=false`) | Extra approval hardening | Persistent once enabled in current router line |
+| New Receiver 24h Delay (`3`) | ADDON | `NewReceiverDelayPolicy` | `DELAY_SECONDS=86400` | 24h first-receiver review window | Persistent once enabled in current router line |
+| Large Transfer 24h Delay (`4`) | ADDON | `LargeTransferDelayPolicy` | `ETH_THRESHOLD_WEI=1 ether`, `ERC20_THRESHOLD_UNITS=1`, `DELAY_SECONDS=86400` | 24h high-value outflow delay | Persistent once enabled in current router line |
 
-## Composition rules
-- Effective policy set: `base pack + enabled add-on snapshots`.
-- Final decision folding: `REVERT > DELAY > ALLOW`.
+## Composition Rules
+- Effective policy set = `base pack + enabled add-on snapshots`.
+- Decision fold = `REVERT > DELAY > ALLOW`.
 - Add-ons cannot weaken base behavior.
-- Enabled add-ons are permanent snapshots (one-time premium upgrade model).
-- Subscription-style expiring add-on validity is incompatible with current router semantics without core changes.
-- Duplicate policy addresses are rejected by router checks.
-- Policy registration rejects non-contract policy addresses.
-- Policy registration/binding requires policy introspection metadata:
-  - `policyKey`, `policyName`, `policyDescription`, `policyConfigVersion`, `policyConfig`.
+- Current router model keeps enabled add-ons active (no disable path).
+- Duplicate policy addresses are rejected.
+- Admissible policies require introspection metadata.
 
-## Monetization alignment
-- Premium add-on packs follow one-time permanent upgrade semantics.
-- Execution fee (when enabled) applies to `executeNow`/`executeScheduled` only and is best-effort.
-- Canonical monetization/trust wording: `MONETIZATION.md`.
-
-## Scheduled queue semantics
-- `executeScheduled(txId)` always re-checks current policy.
-- Execution is allowed only when:
+## Scheduled Queue Semantics
+- `executeScheduled(txId)` re-checks current policy state.
+- Execution requires:
   - current decision is not `Revert`, and
-  - current time satisfies `max(originalUnlockTime, createdAt + currentDelaySeconds)` when current decision is `Delay`.
+  - delay condition satisfied when current decision is `Delay`.
 
-## Large transfer caveat
-- Delay trigger uses `>=` threshold semantics.
-- ERC20 thresholding compares raw token units (`ERC20_THRESHOLD_UNITS`), not economically normalized value.
-- Coverage is limited to native ETH value and ERC20 `transfer` / `transferFrom` selector shapes.
+## Large Transfer Caveats
+- Trigger comparator: `>=`.
+- ERC20 threshold is raw token units (`ERC20_THRESHOLD_UNITS`), not price-normalized value.
+- Policy scope is intentionally narrow (`ETH value`, ERC20 `transfer`, `transferFrom`).
 
-## Optional policies not in default packs
-- `UnknownContractBlockPolicy` exists in codebase but is not part of default curated packs (`0`, `1`, `2`).
-- Its allowlist is mapping-based and non-enumerable on-chain; full allowlist reconstruction requires `AllowedSet` event indexing.
+## Optional Policies Not in Default Curated Packs
+- `UnknownContractBlockPolicy` exists in codebase, not in default curated packs.
 
-## Pack reconstruction APIs
-- `packCount()` / `packIdAt(index)` enumerate known pack ids.
-- `getPackMeta(packId)` returns:
-  - `active`
-  - `packType`
-  - `metadata` hash
-  - `slug`
-  - `version`
-  - `policyCount`
-- `getPackPolicies(packId)` returns the canonical policy address list.
+## Reconstruction APIs
+- `packCount()` / `packIdAt(index)`
+- `getPackMeta(packId)`
+- `getPackPolicies(packId)`

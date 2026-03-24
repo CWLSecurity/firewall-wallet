@@ -58,6 +58,51 @@ contract NewEOAReceiverDelayPolicyTest is Test {
         assertEq(delay, 0);
     }
 
+    function test_Delay_OnUnknownSelector_ToNewContractTarget() public {
+        MockReceiver protocol = new MockReceiver();
+        bytes memory data = abi.encodeWithSignature("swap(uint256)", 1);
+        (Decision decision, uint48 delay) = policy.evaluate(address(vault), address(protocol), 0, data);
+        assertEq(uint256(decision), uint256(Decision.Delay));
+        assertEq(delay, DELAY);
+    }
+
+    function test_UnknownSelector_ContractTargetBecomesKnown_AfterExecutionHook() public {
+        MockReceiver protocol = new MockReceiver();
+        bytes memory data = abi.encodeWithSignature("swap(uint256)", 1);
+
+        (Decision d1, uint48 delay1) = policy.evaluate(address(vault), address(protocol), 0, data);
+        assertEq(uint256(d1), uint256(Decision.Delay));
+        assertEq(delay1, DELAY);
+
+        vm.prank(router);
+        policy.onExecuted(address(vault), address(protocol), 0, data);
+
+        (Decision d2, uint48 delay2) = policy.evaluate(address(vault), address(protocol), 0, data);
+        assertEq(uint256(d2), uint256(Decision.Allow));
+        assertEq(delay2, 0);
+    }
+
+    function test_ApprovalLikeSelector_ToContract_RemainsAllow() public {
+        MockReceiver contractTarget = new MockReceiver();
+        bytes memory approveData = abi.encodeWithSignature("approve(address,uint256)", address(0xCAFE), 10);
+
+        (Decision decision, uint48 delay) = policy.evaluate(address(vault), address(contractTarget), 0, approveData);
+        assertEq(uint256(decision), uint256(Decision.Allow));
+        assertEq(delay, 0);
+    }
+
+    function test_Delay_OnERC721SafeTransfer_ToEOA() public view {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(0x42842e0e),
+            address(0xA1),
+            eoaReceiver,
+            uint256(1)
+        );
+        (Decision decision, uint48 delay) = policy.evaluate(address(vault), token, 0, data);
+        assertEq(uint256(decision), uint256(Decision.Delay));
+        assertEq(delay, DELAY);
+    }
+
     function test_Rejects_UnauthorizedOnExecutedCaller() public {
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSignature("ReceiverDelay_UnauthorizedHookCaller()"));

@@ -1,5 +1,6 @@
-# Firewall Vault v1 Security Model (Current)
+# Firewall Vault Security Model (Current)
 
+Last updated: 2026-03-24
 ## 1. Scope
 This document describes the current security model implemented in this repository.
 
@@ -23,7 +24,9 @@ Priority is fixed: `REVERT > DELAY > ALLOW`.
 Current curated pack IDs:
 - Base `0`: Conservative
 - Base `1`: DeFi Trader
-- Add-on `2`: Vault Protection
+- Add-on `2`: Approval Hardening
+- Add-on `3`: New Receiver 24h Delay
+- Add-on `4`: Large Transfer 24h Delay
 
 ## 5. Implemented hardening
 ### Phase 1
@@ -54,6 +57,16 @@ State is scoped by `(vault, token, spender/recipient)` to avoid cross-token prim
   - split ETH and ERC20 thresholds,
   - narrow explicit selector scope preserved.
 
+### Phase 3B
+- Factory ownership auth hardening:
+  - `createWallet(owner, ...)` requires `msg.sender == owner`.
+- DeFi receiver hardening:
+  - `NewEOAReceiverDelayPolicy` now delays first unknown-selector call to a new contract target.
+  - approval-like selectors remain excluded from receiver-delay classification.
+  - NFT transfer selectors are parsed for receiver extraction.
+- NFT receive baseline in module:
+  - `FirewallModule` implements `IERC721Receiver`, `IERC1155Receiver`, and `IERC165`.
+
 ## 6. Policy coverage summary
 Strict controls:
 - strict approval/operator protections in conservative-style packs.
@@ -64,6 +77,32 @@ Delay controls:
 - first EOA receiver delay (DeFi-oriented),
 - first risky spender/recipient delays in DeFi compensating policies,
 - scheduled execution re-check with current-delay enforcement.
+
+## 6A. Current Test Coverage
+Current on-chain suite (`235` tests) includes explicit coverage for:
+- wallet creation and initial state,
+- base-pack behavior and add-on enablement,
+- delayed transfer and queue lifecycle paths,
+- 24-hour add-on transition semantics,
+- threshold boundaries around large-transfer triggers,
+- cross-policy isolation and cross-wallet isolation,
+- mixed multi-queue interleaving stress,
+- router behavior when policy `evaluate()` reverts.
+- factory owner-auth creation restriction.
+- safe ERC721/ERC1155 inbound transfer hooks on vault module.
+- unknown-selector contract-target first-call delay in DeFi receiver policy.
+
+## 6B. Recently Fixed Regression
+Resolved and regression-tested:
+- `NewReceiverDelayPolicy` previously misclassified approval-like calldata as new-receiver interactions.
+- Result was unintended cross-policy coupling (approval-path delays altered by receiver-delay add-on behavior).
+- Fix filters approval-like selectors from receiver-delay classification.
+
+## 6C. Policy Evaluation Failure Semantics
+Current router behavior on policy runtime failure:
+- if any policy `evaluate()` reverts, router evaluation reverts (fail-closed).
+- This is security-favorable (no fail-open bypass), but introduces availability risk if a policy is faulty/misconfigured.
+- This behavior is now explicitly covered by tests.
 
 ## 7. Execution fee model (B2C foundation)
 - Fee charging applies on successful `executeNow` and `executeScheduled`.
@@ -131,9 +170,11 @@ For canonical monetization positioning and limits, see `MONETIZATION.md`.
 - Add-on permanence is incompatible with expiring subscription-style pack validity unless router semantics change.
 - ERC20 thresholds are raw-unit based (not price-aware).
 - Large-transfer policy only covers ETH value + ERC20 `transfer` / `transferFrom` shapes.
+- DeFi unknown-selector delay is target-based; it does not decode final downstream recipient in nested router internals.
 - Delay is review time, not absolute prevention if owner later executes malicious intent.
 - Endpoint/device/signing-environment compromise remains out of protocol control.
 - `recovery` is reserved metadata only; no recovery authorization path is active.
+- Future hardening can still expand rare sequence/property-style stress coverage.
 
 ## 12. Trust boundaries
 Users still trust:

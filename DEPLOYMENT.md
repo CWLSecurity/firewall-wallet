@@ -23,6 +23,10 @@ Deploy core with:
 Use:
 - `createWallet(owner, recovery, basePackId)`
 
+Creation authorization semantics:
+- caller must equal `owner` (`msg.sender == owner`)
+- delegated creation by third party is rejected by factory
+
 `recovery` is currently reserved metadata only (no recovery authorization flow yet).
 
 ## DeFi base pack wiring (current)
@@ -32,6 +36,18 @@ Base pack `1` includes:
 - `Erc20FirstNewRecipientDelayPolicy`
 - `LargeTransferDelayPolicy`
 - `NewEOAReceiverDelayPolicy`
+
+`NewEOAReceiverDelayPolicy` behavior (current):
+- delays first transfer to new EOA receiver,
+- delays first unknown-selector call to a new contract target,
+- keeps approval-like selectors out of receiver-delay classification.
+
+## NFT receive support (module)
+`FirewallModule` now implements:
+- `onERC721Received`
+- `onERC1155Received`
+- `onERC1155BatchReceived`
+- `supportsInterface` (`IERC165`, `IERC721Receiver`, `IERC1155Receiver`)
 
 ## Large transfer policy config shape (current)
 `LargeTransferDelayPolicy` expects:

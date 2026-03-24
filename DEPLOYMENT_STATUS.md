@@ -1,36 +1,31 @@
-# Firewall Vault — Deployment Status (Authoritative)
+# Firewall Vault — Deployment Status
 
-Last updated: 2026-03-16
+Last updated: 2026-03-24
 
-## 1) Current release status
-- Target release model: Base `0` + Base `1` + Add-on `2` (current pack matrix).
-- Current status: **no finalized in-repo mainnet manifest for the exact current release build**.
-- Release requirement: run the current deployment script and publish a fresh manifest + verification transcript before soft launch.
+## 1) Release Track
+- Active release model: Base packs `0`,`1` + add-ons `2`,`3`,`4`.
+- Current status: latest Base deployment artifacts and manifest are present in-repo.
 
-## 2) Canonical manifest format and location
-- Canonical manifest file: `packages/contracts/deployments/base-mainnet-manifest.json`
-- Current file status: `legacy_snapshot_not_current_release`
-- Includes:
+## 2) Canonical Manifest
+- File: `packages/contracts/deployments/base-mainnet-manifest.json`
+- Contains:
   - chain id
   - compiler version
-  - create tx hashes
-  - pack-registration tx hashes
-  - curated pack ids (`0`,`1`,`2`) with slug/version metadata
-  - deployed addresses captured from script broadcast artifact
+  - deployment tx hashes
+  - curated pack IDs and metadata
+  - deployed addresses mirrored from broadcast artifacts
 
-## 3) Compiler and tool assumptions
-- Foundry profile uses: `packages/contracts/foundry.toml`
-- Compiler binary: `/usr/bin/solc`
-- Compiler version expected for reproducibility:
-  - `solc, Version: 0.8.30+commit.73712a01.Linux.g++`
+## 3) Build/Tooling Assumptions
+- Foundry config: `packages/contracts/foundry.toml`
+- Solidity toolchain expected for reproducibility: `0.8.30`
 
-Check locally before deploy/verify:
+Quick checks:
 ```bash
 solc --version
 forge --version
 ```
 
-## 4) Exact deployment command (current scripts)
+## 4) Deployment Path (Current Scripts)
 ```bash
 cd firewall-wallet/packages/contracts
 export DEPLOYER_PK=...
@@ -43,58 +38,27 @@ forge script script/DeployBaseMainnet.s.sol:DeployBaseMainnet \
   -vvv
 ```
 
-## 5) Exact verification command set
-Use this after deployment with the addresses in the new manifest:
-```bash
-cd firewall-wallet/packages/contracts
-export BASESCAN_API_KEY=...
-export CHAIN_ID=8453
+## 5) Verification Path
+Use `forge verify-contract` for all deployed core contracts and policies with constructor args from broadcast outputs.
 
-# FirewallFactory
-forge verify-contract \
-  --chain-id "$CHAIN_ID" \
-  --watch \
-  --compiler-version "v0.8.30+commit.73712a01" \
-  <FACTORY_ADDRESS> \
-  src/FirewallFactory.sol:FirewallFactory
+Primary references:
+- `DEPLOYMENT.md`
+- `VERIFY_DEPLOYMENT.md`
 
-# PolicyPackRegistry
-forge verify-contract \
-  --chain-id "$CHAIN_ID" \
-  --watch \
-  --compiler-version "v0.8.30+commit.73712a01" \
-  <REGISTRY_ADDRESS> \
-  src/PolicyPackRegistry.sol:PolicyPackRegistry
+## 6) Operational Notes
+- Pack semantics are additive and deterministic.
+- Enabled add-ons remain active in current router line.
+- UI and docs should align with these constraints to avoid overclaiming feature behavior.
+- Factory now enforces owner-authenticated creation (`msg.sender == owner`).
+- Module line supports safe NFT receive hooks (`ERC721` / `ERC1155`).
+- DeFi line includes first unknown-selector contract-target delay hardening.
 
-# SimpleEntitlementManager
-forge verify-contract \
-  --chain-id "$CHAIN_ID" \
-  --watch \
-  --compiler-version "v0.8.30+commit.73712a01" \
-  <ENTITLEMENT_ADDRESS> \
-  src/SimpleEntitlementManager.sol:SimpleEntitlementManager
-```
+## 8) CI / Integrity Automation
+- `npm run test:contracts`
+- `npm run smoke:contracts`
+- `npm run integrity:check`
 
-For policy contracts with constructor args, use `--constructor-args` with values from the deployment broadcast artifact (`packages/contracts/broadcast/.../run-latest.json`) or manifest extension fields.
-
-## 6) Legacy snapshot currently in repo
-The latest recorded Base run artifact is:
-- `packages/contracts/broadcast/DeployBaseMainnet.s.sol/8453/run-latest.json`
-
-Its extracted addresses/tx hashes are mirrored in:
-- `packages/contracts/deployments/base-mainnet-manifest.json`
-
-Do not treat this legacy snapshot as a finalized manifest for the current release until re-deployed from current sources and re-verified.
-
-## 7) Monetization status alignment (current)
-- B2C premium pack model: one-time permanent add-on snapshots (not subscription validity).
-- B2C execution fee:
-  - enabled on `executeNow` / `executeScheduled`,
-  - hard-capped at `0.5%` rate (`MAX_EXECUTION_FEE_CAP_PPM = 5000`),
-  - timelocked config updates,
-  - best-effort collection.
-- B2B:
-  - primitives implemented (`ProtocolRegistry`, protocol interaction event, `TrustedVaultRegistry`, `isFactoryVault`),
-  - live on-chain B2B billing is not implemented.
-
-Canonical source: `MONETIZATION.md`.
+## 7) Monetization Alignment (Current)
+- Premium add-on model matches one-time persistent enable semantics.
+- Execution fee model is bounded and timelocked where enabled.
+- Canonical wording and constraints: `MONETIZATION.md`.

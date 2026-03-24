@@ -6,6 +6,7 @@ import {PolicyRouter} from "./PolicyRouter.sol";
 import {IPolicyPackRegistry} from "./interfaces/IPolicyPackRegistry.sol";
 
 error Factory_ZeroAddress();
+error Factory_UnauthorizedOwner(address caller, address owner);
 error Factory_InvalidBasePack(uint256 packId);
 error Factory_InactiveBasePack(uint256 packId);
 
@@ -41,6 +42,7 @@ contract FirewallFactory {
         returns (address wallet)
     {
         if (owner == address(0)) revert Factory_ZeroAddress();
+        if (msg.sender != owner) revert Factory_UnauthorizedOwner(msg.sender, owner);
         if (recovery == address(0)) revert Factory_ZeroAddress();
 
         IPolicyPackRegistry registry = IPolicyPackRegistry(policyPackRegistry);

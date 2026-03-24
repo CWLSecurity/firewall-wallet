@@ -23,7 +23,35 @@ error Firewall_NotUnlocked(bytes32 txId, uint256 unlockTime);
 error Firewall_AlreadyExecuted(bytes32 txId);
 error Firewall_ExecutionFailed(bytes revertData);
 
-contract FirewallModule {
+interface IERC165 {
+    function supportsInterface(bytes4 interfaceId) external view returns (bool);
+}
+
+interface IERC721Receiver {
+    function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data)
+        external
+        returns (bytes4);
+}
+
+interface IERC1155Receiver is IERC165 {
+    function onERC1155Received(
+        address operator,
+        address from,
+        uint256 id,
+        uint256 value,
+        bytes calldata data
+    ) external returns (bytes4);
+
+    function onERC1155BatchReceived(
+        address operator,
+        address from,
+        uint256[] calldata ids,
+        uint256[] calldata values,
+        bytes calldata data
+    ) external returns (bytes4);
+}
+
+contract FirewallModule is IERC165, IERC721Receiver, IERC1155Receiver {
     bytes32 internal constant STORAGE_SLOT =
         bytes32(uint256(keccak256("firewall.vault.storage.v1")) - 1);
     uint32 public constant EXECUTION_FEE_DENOMINATOR_PPM = 1_000_000;
@@ -266,6 +294,43 @@ contract FirewallModule {
     }
 
     receive() external payable {}
+
+    /// @notice ERC721 safe transfer hook.
+    ///         Accepts inbound NFTs to keep Vault custody deterministic for end users.
+    function onERC721Received(address, address, uint256, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
+        return 0x150b7a02;
+    }
+
+    /// @notice ERC1155 single transfer hook.
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
+        return 0xf23a6e61;
+    }
+
+    /// @notice ERC1155 batch transfer hook.
+    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
+        return 0xbc197c81;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == 0x01ffc9a7 // IERC165
+            || interfaceId == 0x150b7a02 // IERC721Receiver
+            || interfaceId == 0x4e2312e0; // IERC1155Receiver
+    }
 
     function router() external view returns (address) {
         return _s().router;

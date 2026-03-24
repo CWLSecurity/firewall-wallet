@@ -20,6 +20,8 @@ import {
 
 import {Decision} from "../src/interfaces/IFirewallPolicy.sol";
 import {ProtocolRegistry} from "../src/ProtocolRegistry.sol";
+import {MockERC721} from "../src/mocks/MockERC721.sol";
+import {MockERC1155} from "../src/mocks/MockERC1155.sol";
 
 contract MockRouter {
     Decision public decision;
@@ -833,6 +835,66 @@ contract FirewallModuleTest is Test {
         vm.prank(OWNER);
         m.executeNow(address(receiver), 0.2 ether, "");
         assertEq(address(receiver).balance, 0.2 ether);
+    }
+
+    function testNFTReceiverHooks_SupportExpectedInterfaces() public {
+        MockRouter r = new MockRouter(Decision.Allow, 0);
+        FirewallModule m = _deployAndInit(address(r));
+
+        assertTrue(m.supportsInterface(0x01ffc9a7)); // IERC165
+        assertTrue(m.supportsInterface(0x150b7a02)); // IERC721Receiver
+        assertTrue(m.supportsInterface(0x4e2312e0)); // IERC1155Receiver
+        assertFalse(m.supportsInterface(0xffffffff));
+    }
+
+    function testNFTReceiverHooks_ERC721SafeTransferToVault_Succeeds() public {
+        MockRouter r = new MockRouter(Decision.Allow, 0);
+        FirewallModule m = _deployAndInit(address(r));
+        MockERC721 nft = new MockERC721();
+
+        nft.mint(OWNER, 1);
+        vm.prank(OWNER);
+        nft.safeTransferFrom(OWNER, address(m), 1);
+
+        assertEq(nft.ownerOf(1), address(m));
+    }
+
+    function testNFTReceiverHooks_ERC1155SafeTransferToVault_Succeeds() public {
+        MockRouter r = new MockRouter(Decision.Allow, 0);
+        FirewallModule m = _deployAndInit(address(r));
+        MockERC1155 nft = new MockERC1155();
+
+        nft.mint(OWNER, 7, 3);
+        vm.prank(OWNER);
+        nft.safeTransferFrom(OWNER, address(m), 7, 2, "");
+
+        assertEq(nft.balanceOf(7, OWNER), 1);
+        assertEq(nft.balanceOf(7, address(m)), 2);
+    }
+
+    function testNFTReceiverHooks_ERC1155SafeBatchTransferToVault_Succeeds() public {
+        MockRouter r = new MockRouter(Decision.Allow, 0);
+        FirewallModule m = _deployAndInit(address(r));
+        MockERC1155 nft = new MockERC1155();
+
+        nft.mint(OWNER, 10, 4);
+        nft.mint(OWNER, 11, 5);
+
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 10;
+        ids[1] = 11;
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 2;
+        amounts[1] = 3;
+
+        vm.prank(OWNER);
+        nft.safeBatchTransferFrom(OWNER, address(m), ids, amounts, "");
+
+        assertEq(nft.balanceOf(10, OWNER), 2);
+        assertEq(nft.balanceOf(11, OWNER), 2);
+        assertEq(nft.balanceOf(10, address(m)), 2);
+        assertEq(nft.balanceOf(11, address(m)), 3);
     }
 
     function _activateFee(FirewallModule m, uint32 feePpm, address feeReceiver) internal {

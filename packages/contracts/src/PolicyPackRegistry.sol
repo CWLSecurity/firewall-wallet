@@ -11,6 +11,7 @@ error Registry_PackExists(uint256 packId);
 error Registry_ZeroPolicies();
 error Registry_InvalidPolicy(address policy);
 error Registry_InvalidPackType(uint8 packType);
+error Registry_InvalidPackAccessMode(uint8 packAccessMode);
 error Registry_PolicyMissingMetadata(address policy);
 error Registry_InvalidPolicyMetadata(address policy);
 error Registry_InvalidPackVersion(uint16 version);
@@ -18,6 +19,8 @@ error Registry_InvalidPackVersion(uint16 version);
 contract PolicyPackRegistry is IPolicyPackRegistry {
     uint8 public constant PACK_TYPE_BASE = 0;
     uint8 public constant PACK_TYPE_ADDON = 1;
+    uint8 public constant PACK_ACCESS_FREE = 0;
+    uint8 public constant PACK_ACCESS_ENTITLED = 1;
 
     address public owner;
 
@@ -25,6 +28,7 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
         bool exists;
         bool active;
         uint8 packType;
+        uint8 packAccessMode;
         bytes32 metadata;
         string slug;
         uint16 version;
@@ -36,11 +40,16 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event PackRegistered(
-        uint256 indexed packId, uint8 indexed packType, bool active, bytes32 metadata
+        uint256 indexed packId,
+        uint8 indexed packType,
+        uint8 indexed packAccessMode,
+        bool active,
+        bytes32 metadata
     );
     event PackRegisteredDetailed(
         uint256 indexed packId,
         uint8 indexed packType,
+        uint8 indexed packAccessMode,
         bool active,
         bytes32 metadata,
         string slug,
@@ -69,28 +78,31 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
     function registerPack(
         uint256 packId,
         uint8 packType,
+        uint8 packAccessMode,
         bytes32 metadata,
         bool active,
         address[] calldata policies
     ) external onlyOwner {
-        _registerPack(packId, packType, metadata, "", 1, active, policies);
+        _registerPack(packId, packType, packAccessMode, metadata, "", 1, active, policies);
     }
 
     function registerPackDetailed(
         uint256 packId,
         uint8 packType,
+        uint8 packAccessMode,
         bytes32 metadata,
         string calldata slug,
         uint16 version,
         bool active,
         address[] calldata policies
     ) external onlyOwner {
-        _registerPack(packId, packType, metadata, slug, version, active, policies);
+        _registerPack(packId, packType, packAccessMode, metadata, slug, version, active, policies);
     }
 
     function _registerPack(
         uint256 packId,
         uint8 packType,
+        uint8 packAccessMode,
         bytes32 metadata,
         string memory slug,
         uint16 version,
@@ -99,6 +111,9 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
     ) internal {
         if (packType != PACK_TYPE_BASE && packType != PACK_TYPE_ADDON) {
             revert Registry_InvalidPackType(packType);
+        }
+        if (packAccessMode != PACK_ACCESS_FREE && packAccessMode != PACK_ACCESS_ENTITLED) {
+            revert Registry_InvalidPackAccessMode(packAccessMode);
         }
         if (_packMeta[packId].exists) revert Registry_PackExists(packId);
         if (version == 0) revert Registry_InvalidPackVersion(version);
@@ -118,14 +133,15 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
             exists: true,
             active: active,
             packType: packType,
+            packAccessMode: packAccessMode,
             metadata: metadata,
             slug: slug,
             version: version
         });
         _packIds.push(packId);
 
-        emit PackRegistered(packId, packType, active, metadata);
-        emit PackRegisteredDetailed(packId, packType, active, metadata, slug, version);
+        emit PackRegistered(packId, packType, packAccessMode, active, metadata);
+        emit PackRegisteredDetailed(packId, packType, packAccessMode, active, metadata, slug, version);
     }
 
     function setPackActive(uint256 packId, bool active) external onlyOwner {
@@ -152,6 +168,12 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
         return meta.metadata;
     }
 
+    function packAccessModeOf(uint256 packId) external view returns (uint8) {
+        PackMeta storage meta = _packMeta[packId];
+        if (!meta.exists) revert Registry_UnknownPack(packId);
+        return meta.packAccessMode;
+    }
+
     function packCount() external view returns (uint256) {
         return _packIds.length;
     }
@@ -170,6 +192,7 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
         returns (
             bool active,
             uint8 packType,
+            uint8 packAccessMode,
             bytes32 metadata,
             string memory slug,
             uint16 version,
@@ -178,14 +201,14 @@ contract PolicyPackRegistry is IPolicyPackRegistry {
     {
         PackMeta storage meta = _packMeta[packId];
         if (!meta.exists) revert Registry_UnknownPack(packId);
-        return (
-            meta.active,
-            meta.packType,
-            meta.metadata,
-            meta.slug,
-            meta.version,
-            _packPolicies[packId].length
-        );
+        address[] storage policies = _packPolicies[packId];
+        active = meta.active;
+        packType = meta.packType;
+        packAccessMode = meta.packAccessMode;
+        metadata = meta.metadata;
+        slug = meta.slug;
+        version = meta.version;
+        policyCount = policies.length;
     }
 
     function policyCountOf(uint256 packId) external view returns (uint256) {

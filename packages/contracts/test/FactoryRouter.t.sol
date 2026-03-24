@@ -5,6 +5,8 @@ import "forge-std/Test.sol";
 
 import {
     FirewallFactory,
+    Factory_ZeroAddress,
+    Factory_UnauthorizedOwner,
     Factory_InvalidBasePack,
     Factory_InactiveBasePack
 } from "../src/FirewallFactory.sol";
@@ -17,6 +19,8 @@ import {Decision} from "../src/interfaces/IFirewallPolicy.sol";
 contract FactoryRouterTest is Test {
     uint8 internal constant PACK_TYPE_BASE = 0;
     uint8 internal constant PACK_TYPE_ADDON = 1;
+    uint8 internal constant PACK_ACCESS_FREE = 0;
+    uint8 internal constant PACK_ACCESS_ENTITLED = 1;
 
     uint256 internal constant BASE_PACK_CONSERVATIVE = 0;
     uint256 internal constant BASE_PACK_DEFI = 1;
@@ -42,16 +46,23 @@ contract FactoryRouterTest is Test {
         address[] memory conservative = new address[](1);
         conservative[0] = address(basePolicyConservative);
         registry.registerPack(
-            BASE_PACK_CONSERVATIVE, PACK_TYPE_BASE, keccak256("base-conservative"), true, conservative
+            BASE_PACK_CONSERVATIVE,
+            PACK_TYPE_BASE,
+            PACK_ACCESS_FREE,
+            keccak256("base-conservative"),
+            true,
+            conservative
         );
 
         address[] memory defi = new address[](1);
         defi[0] = address(basePolicyDefi);
-        registry.registerPack(BASE_PACK_DEFI, PACK_TYPE_BASE, keccak256("base-defi"), true, defi);
+        registry.registerPack(BASE_PACK_DEFI, PACK_TYPE_BASE, PACK_ACCESS_FREE, keccak256("base-defi"), true, defi);
 
         address[] memory addon = new address[](1);
         addon[0] = address(addonPolicy);
-        registry.registerPack(ADDON_PACK, PACK_TYPE_ADDON, keccak256("addon-delay"), true, addon);
+        registry.registerPack(
+            ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, keccak256("addon-delay"), true, addon
+        );
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         factory = new FirewallFactory(address(registry), address(entitlement));
@@ -63,6 +74,7 @@ contract FactoryRouterTest is Test {
         returns (address wallet, address router)
     {
         vm.recordLogs();
+        vm.prank(OWNER);
         wallet = f.createWallet(OWNER, RECOVERY, basePackId);
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
@@ -97,6 +109,7 @@ contract FactoryRouterTest is Test {
 
     function test_FactoryRejectsAddonAsBasePack() public {
         (FirewallFactory f,) = _deployFactory();
+        vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(Factory_InvalidBasePack.selector, ADDON_PACK));
         f.createWallet(OWNER, RECOVERY, ADDON_PACK);
     }
@@ -107,16 +120,47 @@ contract FactoryRouterTest is Test {
         address[] memory conservative = new address[](1);
         conservative[0] = address(basePolicy);
         registry.registerPack(
-            BASE_PACK_CONSERVATIVE, PACK_TYPE_BASE, keccak256("base-conservative"), false, conservative
+            BASE_PACK_CONSERVATIVE,
+            PACK_TYPE_BASE,
+            PACK_ACCESS_FREE,
+            keccak256("base-conservative"),
+            false,
+            conservative
         );
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         FirewallFactory f = new FirewallFactory(address(registry), address(entitlement));
 
+        vm.prank(OWNER);
         vm.expectRevert(
             abi.encodeWithSelector(Factory_InactiveBasePack.selector, BASE_PACK_CONSERVATIVE)
         );
         f.createWallet(OWNER, RECOVERY, BASE_PACK_CONSERVATIVE);
+    }
+
+    function test_FactoryRejectsZeroOwner() public {
+        (FirewallFactory f,) = _deployFactory();
+        vm.expectRevert(Factory_ZeroAddress.selector);
+        f.createWallet(address(0), RECOVERY, BASE_PACK_CONSERVATIVE);
+    }
+
+    function test_FactoryRejectsZeroRecovery() public {
+        (FirewallFactory f,) = _deployFactory();
+        vm.prank(OWNER);
+        vm.expectRevert(Factory_ZeroAddress.selector);
+        f.createWallet(OWNER, address(0), BASE_PACK_CONSERVATIVE);
+    }
+
+    function test_FactoryRejectsNonOwnerCaller() public {
+        (FirewallFactory f,) = _deployFactory();
+        vm.expectRevert(abi.encodeWithSelector(Factory_UnauthorizedOwner.selector, address(this), OWNER));
+        f.createWallet(OWNER, RECOVERY, BASE_PACK_CONSERVATIVE);
+    }
+
+    function test_FactoryConstructorRejectsZeroRegistry() public {
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
+        vm.expectRevert(Factory_ZeroAddress.selector);
+        new FirewallFactory(address(0), address(entitlement));
     }
 
     function test_FactoryCreatesFreshRouterPerWallet() public {

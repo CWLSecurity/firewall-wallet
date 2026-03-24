@@ -16,6 +16,9 @@ Check router immutables:
 - registry address
 - base pack id
 
+Factory creation auth check:
+- `createWallet(owner, ...)` must enforce caller equals owner.
+
 ## 2) Verify registry packs
 Expected curated packs:
 - Base `0` Conservative
@@ -25,8 +28,8 @@ Expected curated packs:
 - Add-on `4` Large Transfer 24h Delay
 
 For registry reconstruction verify:
-- `packCount() == 3`
-- `packIdAt(0..2)` returns `0,1,2` in registration order
+- `packCount() == 5`
+- `packIdAt(0..4)` returns `0,1,2,3,4` in registration order
 - `getPackMeta(packId)` returns expected `active`, `packType`, `metadata`, `slug`, `version`, `policyCount`
 
 For each pack verify:
@@ -57,6 +60,9 @@ Expected keys include:
 - `new-receiver-delay-v1`
 - `new-eoa-receiver-delay-v1`
 
+For `new-eoa-receiver-delay-v1` verify config includes:
+- `unknown_contract_selector_action=delay_first_call`
+
 ## 5) Verify policy parameters
 Read structured config from `policyConfig()` and verify expected key/value pairs.
 Legacy getters can be used as cross-check.
@@ -75,6 +81,7 @@ DeFi compensating policies:
 - Decision order remains `REVERT > DELAY > ALLOW`.
 - Strict non-zero approval hard blocks are present in strict packs.
 - DeFi pack includes spender/recipient compensating controls.
+- DeFi line delays first unknown-selector call to new contract targets.
 - `executeScheduled` path is policy-rechecked:
   - current `Revert` blocks execution,
   - current `Delay` requires `max(originalUnlockTime, createdAt + currentDelaySeconds)`,
@@ -120,3 +127,9 @@ DeFi compensating policies:
 - Unknown-contract allowlist reconstruction requires `AllowedSet` event indexing.
 - `recovery` is currently reserved metadata only.
 - Execution fee is module-measured gas based and best-effort (not guaranteed-revenue accounting).
+
+## 11) Verify NFT receive hooks on wallet module
+For wallet `FirewallModule`, verify:
+- `supportsInterface(0x01ffc9a7) == true` (`IERC165`)
+- `supportsInterface(0x150b7a02) == true` (`IERC721Receiver`)
+- `supportsInterface(0x4e2312e0) == true` (`IERC1155Receiver`)
