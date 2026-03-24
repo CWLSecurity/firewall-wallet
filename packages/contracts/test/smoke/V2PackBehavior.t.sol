@@ -155,7 +155,7 @@ contract V2PackBehavior is SmokeBase {
         assertEq(delay, DEFI_NEW_SPENDER_DELAY);
     }
 
-    function test_Base1DeFiTrader_FirstSwapToNewRouter_NotDelayed() public {
+    function test_Base1DeFiTrader_FirstSwapToNewRouter_DelayedByUnknownContractHardening() public {
         (FirewallModule wallet,) = _createWalletAndRouter(BASE_PACK_DEFI);
         MockReceiver routerLike = new MockReceiver();
 
@@ -168,16 +168,32 @@ contract V2PackBehavior is SmokeBase {
             block.timestamp + 1 hours
         );
 
+        vm.expectRevert(Firewall_RevertedByPolicy.selector);
         wallet.executeNow(address(routerLike), 0, data);
+
+        bytes32 txId = wallet.schedule(address(routerLike), 0, data);
+        (, , , , uint48 unlockTime,) = wallet.getScheduled(txId);
+        assertEq(unlockTime, uint48(block.timestamp) + DEFI_NEW_RECEIVER_DELAY);
+
+        vm.warp(unlockTime);
+        wallet.executeScheduled(txId);
         assertEq(routerLike.callCount(), 1);
     }
 
-    function test_Base1DeFiTrader_FirstDepositToNewContract_NotDelayed() public {
+    function test_Base1DeFiTrader_FirstDepositToNewContract_DelayedByUnknownContractHardening() public {
         (FirewallModule wallet,) = _createWalletAndRouter(BASE_PACK_DEFI);
         MockReceiver poolLike = new MockReceiver();
 
         bytes memory data = abi.encodeWithSignature("deposit(uint256)", 1);
+        vm.expectRevert(Firewall_RevertedByPolicy.selector);
         wallet.executeNow(address(poolLike), 0, data);
+
+        bytes32 txId = wallet.schedule(address(poolLike), 0, data);
+        (, , , , uint48 unlockTime,) = wallet.getScheduled(txId);
+        assertEq(unlockTime, uint48(block.timestamp) + DEFI_NEW_RECEIVER_DELAY);
+
+        vm.warp(unlockTime);
+        wallet.executeScheduled(txId);
 
         assertEq(poolLike.callCount(), 1);
     }

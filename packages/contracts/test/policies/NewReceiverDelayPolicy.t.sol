@@ -89,6 +89,48 @@ contract NewReceiverDelayPolicyTest is Test {
         assertEq(uint256(delay), uint256(DELAY));
     }
 
+    function test_ERC721SafeTransfer_UsesActualRecipientAndBecomesKnownAfterExecution() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(0x42842e0e),
+            address(0xA1),
+            receiver1,
+            uint256(1)
+        );
+
+        (Decision d1, uint48 delay1) = policy.evaluate(address(vault), token, 0, data);
+        assertEq(uint256(d1), uint256(Decision.Delay));
+        assertEq(delay1, DELAY);
+
+        vm.prank(router);
+        policy.onExecuted(address(vault), token, 0, data);
+
+        (Decision d2, uint48 delay2) = policy.evaluate(address(vault), token, 0, data);
+        assertEq(uint256(d2), uint256(Decision.Allow));
+        assertEq(delay2, 0);
+    }
+
+    function test_ERC1155SafeTransfer_UsesActualRecipientAndBecomesKnownAfterExecution() public {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(0xf242432a),
+            address(0xA1),
+            receiver2,
+            uint256(99),
+            uint256(1),
+            bytes("")
+        );
+
+        (Decision d1, uint48 delay1) = policy.evaluate(address(vault), token, 0, data);
+        assertEq(uint256(d1), uint256(Decision.Delay));
+        assertEq(delay1, DELAY);
+
+        vm.prank(router);
+        policy.onExecuted(address(vault), token, 0, data);
+
+        (Decision d2, uint48 delay2) = policy.evaluate(address(vault), token, 0, data);
+        assertEq(uint256(d2), uint256(Decision.Allow));
+        assertEq(delay2, 0);
+    }
+
     function test_NotAllow_OnZeroAddress() public view {
         (Decision decision, uint48 delay) =
             policy.evaluate(address(0), address(this), 0, "");

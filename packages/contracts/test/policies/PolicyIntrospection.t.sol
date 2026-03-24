@@ -157,16 +157,17 @@ contract PolicyIntrospectionTest is Test {
         assertEq(IPolicyIntrospection(address(policy)).policyKey(), keccak256("new-eoa-receiver-delay-v1"));
         assertEq(IPolicyIntrospection(address(policy)).policyName(), "NewEOAReceiverDelayPolicy");
         assertTrue(bytes(IPolicyIntrospection(address(policy)).policyDescription()).length > 0);
-        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 1);
+        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 2);
         assertEq(policy.DELAY_SECONDS(), 30 minutes);
         assertEq(policy.EOA_ONLY(), true);
 
         PolicyConfigEntry[] memory cfg = IPolicyIntrospection(address(policy)).policyConfig();
-        assertEq(cfg.length, 3);
+        assertEq(cfg.length, 4);
         assertEq(cfg[0].key, bytes32("delay_seconds"));
         assertEq(_asUint(cfg[0]), 30 minutes);
         assertEq(cfg[1].key, bytes32("eoa_only"));
         assertEq(_asBool(cfg[1]), true);
+        assertEq(cfg[3].key, bytes32("unknown_contract_selector_action"));
     }
 
     function test_UnknownContract_IntrospectionAndConfig() public view {

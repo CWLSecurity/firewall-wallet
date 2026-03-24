@@ -1,0 +1,22 @@
+# Core wallet contracts
+packages/contracts/src/FirewallFactory.sol
+packages/contracts/src/FirewallModule.sol
+packages/contracts/src/PolicyRouter.sol
+packages/contracts/src/PolicyPackRegistry.sol
+
+# Active policies
+packages/contracts/src/policies/ApprovalToNewSpenderDelayPolicy.sol
+packages/contracts/src/policies/DeFiApprovalPolicy.sol
+packages/contracts/src/policies/Erc20FirstNewRecipientDelayPolicy.sol
+packages/contracts/src/policies/InfiniteApprovalPolicy.sol
+packages/contracts/src/policies/LargeTransferDelayPolicy.sol
+packages/contracts/src/policies/NewEOAReceiverDelayPolicy.sol
+packages/contracts/src/policies/NewReceiverDelayPolicy.sol
+packages/contracts/src/policies/UnknownContractBlockPolicy.sol
+
+# Launch-critical smoke/tests
+packages/contracts/test/FactoryRouter.t.sol
+packages/contracts/test/FirewallModule.t.sol
+packages/contracts/test/policies/NewEOAReceiverDelayPolicy.t.sol
+packages/contracts/test/policies/NewReceiverDelayPolicy.t.sol
+packages/contracts/test/smoke/V2PackBehavior.t.sol

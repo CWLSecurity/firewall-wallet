@@ -6,6 +6,7 @@ import "forge-std/Test.sol";
 import {
     PolicyRouter,
     Router_NotEntitled,
+    Router_InvalidPackAccessMode,
     Router_Unauthorized,
     Router_PackNotActive,
     Router_InvalidPolicy,
@@ -26,6 +27,8 @@ import {
     PolicyConfigValueType
 } from "../../src/interfaces/IPolicyIntrospection.sol";
 import {MockPolicy} from "../mocks/MockPolicies.sol";
+
+error RevertingEvaluatePolicy_Boom();
 
 contract MockPostExecPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPolicyIntrospection {
     Decision public nextDecision;
@@ -122,14 +125,58 @@ contract InvalidMetadataPolicy is IFirewallPolicy, IPolicyIntrospection {
     }
 }
 
+contract RevertingEvaluatePolicy is IFirewallPolicy, IPolicyIntrospection {
+    function evaluate(address, address, uint256, bytes calldata)
+        external
+        pure
+        returns (Decision, uint48)
+    {
+        revert RevertingEvaluatePolicy_Boom();
+    }
+
+    function policyKey() external pure returns (bytes32) {
+        return keccak256("reverting-evaluate-policy-v1");
+    }
+
+    function policyName() external pure returns (string memory) {
+        return "RevertingEvaluatePolicy";
+    }
+
+    function policyDescription() external pure returns (string memory) {
+        return "Always reverts in evaluate for router revert-semantics tests.";
+    }
+
+    function policyConfigVersion() external pure returns (uint16) {
+        return 1;
+    }
+
+    function policyConfig() external pure returns (PolicyConfigEntry[] memory entries) {
+        entries = new PolicyConfigEntry[](1);
+        entries[0] = PolicyConfigEntry({
+            key: bytes32("mode"),
+            valueType: PolicyConfigValueType.Bytes32,
+            value: bytes32("always_revert"),
+            unit: bytes32("mode")
+        });
+    }
+}
+
 contract MockUnsafePolicyPackRegistry {
     mapping(uint256 => bool) internal _active;
     mapping(uint256 => uint8) internal _packType;
+    mapping(uint256 => uint8) internal _packAccessMode;
     mapping(uint256 => address[]) internal _policies;
 
-    function setPack(uint256 packId, uint8 packType, bool active, address[] memory policies) external {
+    function setPack(
+        uint256 packId,
+        uint8 packType,
+        uint8 packAccessMode,
+        bool active,
+        address[] memory policies
+    ) external {
         _active[packId] = active;
         _packType[packId] = packType;
+        _packAccessMode[packId] = packAccessMode;
         _policies[packId] = policies;
     }
 
@@ -141,6 +188,10 @@ contract MockUnsafePolicyPackRegistry {
         return _packType[packId];
     }
 
+    function packAccessModeOf(uint256 packId) external view returns (uint8) {
+        return _packAccessMode[packId];
+    }
+
     function getPackPolicies(uint256 packId) external view returns (address[] memory) {
         return _policies[packId];
     }
@@ -149,6 +200,8 @@ contract MockUnsafePolicyPackRegistry {
 contract PolicyRouterTest is Test {
     uint8 internal constant PACK_TYPE_BASE = 0;
     uint8 internal constant PACK_TYPE_ADDON = 1;
+    uint8 internal constant PACK_ACCESS_FREE = 0;
+    uint8 internal constant PACK_ACCESS_ENTITLED = 1;
 
     uint256 internal constant BASE_PACK = 0;
     uint256 internal constant ADDON_PACK = 100;
@@ -160,19 +213,28 @@ contract PolicyRouterTest is Test {
         internal
         returns (PolicyRouter router, PolicyPackRegistry registry, SimpleEntitlementManager entitlement)
     {
+        return _deployRouterWithAccessMode(basePolicies, addonPolicies, PACK_ACCESS_ENTITLED);
+    }
+
+    function _deployRouterWithAccessMode(
+        MockPolicy[] memory basePolicies,
+        MockPolicy[] memory addonPolicies,
+        uint8 addonAccessMode
+    ) internal returns (PolicyRouter router, PolicyPackRegistry registry, SimpleEntitlementManager entitlement)
+    {
         registry = new PolicyPackRegistry(address(this));
 
         address[] memory base = new address[](basePolicies.length);
         for (uint256 i = 0; i < basePolicies.length; i++) {
             base[i] = address(basePolicies[i]);
         }
-        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, keccak256("base"), true, base);
+        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, keccak256("base"), true, base);
 
         address[] memory addon = new address[](addonPolicies.length);
         for (uint256 i = 0; i < addonPolicies.length; i++) {
             addon[i] = address(addonPolicies[i]);
         }
-        registry.registerPack(ADDON_PACK, PACK_TYPE_ADDON, keccak256("addon"), true, addon);
+        registry.registerPack(ADDON_PACK, PACK_TYPE_ADDON, addonAccessMode, keccak256("addon"), true, addon);
 
         entitlement = new SimpleEntitlementManager(address(this));
         router = new PolicyRouter(OWNER, FIREWALL, address(registry), address(entitlement), BASE_PACK);
@@ -202,12 +264,14 @@ contract PolicyRouterTest is Test {
         address[] memory base = new address[](2);
         base[0] = address(p);
         base[1] = address(p);
-        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, keccak256("base"), true, base);
+        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, keccak256("base"), true, base);
 
         MockPolicy addonP = new MockPolicy(Decision.Allow, 0);
         address[] memory addon = new address[](1);
         addon[0] = address(addonP);
-        registry.registerPack(ADDON_PACK, PACK_TYPE_ADDON, keccak256("addon"), true, addon);
+        registry.registerPack(
+            ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, keccak256("addon"), true, addon
+        );
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
 
@@ -254,6 +318,58 @@ contract PolicyRouterTest is Test {
         assertEq(uint256(delay), 300);
     }
 
+    function test_Evaluate_RevertsWhenBasePolicyEvaluateReverts() public {
+        PolicyPackRegistry registry = new PolicyPackRegistry(address(this));
+
+        RevertingEvaluatePolicy baseReverting = new RevertingEvaluatePolicy();
+        address[] memory base = new address[](1);
+        base[0] = address(baseReverting);
+        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, keccak256("base"), true, base);
+
+        MockPolicy addonAllow = new MockPolicy(Decision.Allow, 0);
+        address[] memory addon = new address[](1);
+        addon[0] = address(addonAllow);
+        registry.registerPack(
+            ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, keccak256("addon"), true, addon
+        );
+
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
+        PolicyRouter router = new PolicyRouter(OWNER, FIREWALL, address(registry), address(entitlement), BASE_PACK);
+
+        vm.expectRevert(RevertingEvaluatePolicy_Boom.selector);
+        router.evaluate(address(0xCAFE), address(0xBEEF), 0, "");
+    }
+
+    function test_Evaluate_RevertsWhenEnabledAddonPolicyEvaluateReverts() public {
+        PolicyPackRegistry registry = new PolicyPackRegistry(address(this));
+
+        MockPolicy baseAllow = new MockPolicy(Decision.Allow, 0);
+        address[] memory base = new address[](1);
+        base[0] = address(baseAllow);
+        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, keccak256("base"), true, base);
+
+        RevertingEvaluatePolicy addonReverting = new RevertingEvaluatePolicy();
+        address[] memory addon = new address[](1);
+        addon[0] = address(addonReverting);
+        registry.registerPack(
+            ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, keccak256("addon"), true, addon
+        );
+
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
+        PolicyRouter router = new PolicyRouter(OWNER, FIREWALL, address(registry), address(entitlement), BASE_PACK);
+
+        (Decision beforeDecision, uint48 beforeDelay) = router.evaluate(address(0xCAFE), address(0xBEEF), 0, "");
+        assertEq(uint256(beforeDecision), uint256(Decision.Allow));
+        assertEq(beforeDelay, 0);
+
+        entitlement.setEntitlement(OWNER, ADDON_PACK, true);
+        vm.prank(OWNER);
+        router.enableAddonPack(ADDON_PACK);
+
+        vm.expectRevert(RevertingEvaluatePolicy_Boom.selector);
+        router.evaluate(address(0xCAFE), address(0xBEEF), 0, "");
+    }
+
     function test_EnableAddonPack_RequiresEntitlement() public {
         MockPolicy[] memory base = new MockPolicy[](1);
         base[0] = new MockPolicy(Decision.Allow, 0);
@@ -266,6 +382,21 @@ contract PolicyRouterTest is Test {
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(Router_NotEntitled.selector, ADDON_PACK));
         r.enableAddonPack(ADDON_PACK);
+    }
+
+    function test_EnableAddonPack_FreeMode_DoesNotRequireEntitlement() public {
+        MockPolicy[] memory base = new MockPolicy[](1);
+        base[0] = new MockPolicy(Decision.Allow, 0);
+
+        MockPolicy[] memory addon = new MockPolicy[](1);
+        addon[0] = new MockPolicy(Decision.Delay, 300);
+
+        (PolicyRouter r,,) = _deployRouterWithAccessMode(base, addon, PACK_ACCESS_FREE);
+
+        vm.prank(OWNER);
+        r.enableAddonPack(ADDON_PACK);
+
+        assertTrue(r.isAddonPackEnabled(ADDON_PACK));
     }
 
     function test_EnableAddonPack_OnlyOwner() public {
@@ -382,12 +513,14 @@ contract PolicyRouterTest is Test {
         MockPolicy basePolicy = new MockPolicy(Decision.Allow, 0);
         address[] memory base = new address[](1);
         base[0] = address(basePolicy);
-        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, keccak256("base"), true, base);
+        registry.registerPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, keccak256("base"), true, base);
 
         MockPostExecPolicy addonPolicy = new MockPostExecPolicy(Decision.Allow, 0);
         address[] memory addon = new address[](1);
         addon[0] = address(addonPolicy);
-        registry.registerPack(ADDON_PACK, PACK_TYPE_ADDON, keccak256("addon"), true, addon);
+        registry.registerPack(
+            ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, keccak256("addon"), true, addon
+        );
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         PolicyRouter r = new PolicyRouter(OWNER, FIREWALL, address(registry), address(entitlement), BASE_PACK);
@@ -408,7 +541,7 @@ contract PolicyRouterTest is Test {
         MockUnsafePolicyPackRegistry unsafeRegistry = new MockUnsafePolicyPackRegistry();
         address[] memory basePolicies = new address[](1);
         basePolicies[0] = address(0xBEEF);
-        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, true, basePolicies);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         vm.expectRevert(abi.encodeWithSelector(Router_InvalidPolicy.selector, address(0xBEEF)));
@@ -421,11 +554,11 @@ contract PolicyRouterTest is Test {
 
         address[] memory basePolicies = new address[](1);
         basePolicies[0] = address(basePolicy);
-        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, true, basePolicies);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
 
         address[] memory addonPolicies = new address[](1);
         addonPolicies[0] = address(0xCAFE);
-        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, true, addonPolicies);
+        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, true, addonPolicies);
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         PolicyRouter router = new PolicyRouter(OWNER, FIREWALL, address(unsafeRegistry), address(entitlement), BASE_PACK);
@@ -436,13 +569,34 @@ contract PolicyRouterTest is Test {
         router.enableAddonPack(ADDON_PACK);
     }
 
+    function test_EnableAddonPack_RevertsOnInvalidAccessMode() public {
+        MockUnsafePolicyPackRegistry unsafeRegistry = new MockUnsafePolicyPackRegistry();
+        MockPolicy basePolicy = new MockPolicy(Decision.Allow, 0);
+        MockPolicy addonPolicy = new MockPolicy(Decision.Delay, 1);
+
+        address[] memory basePolicies = new address[](1);
+        basePolicies[0] = address(basePolicy);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
+
+        address[] memory addonPolicies = new address[](1);
+        addonPolicies[0] = address(addonPolicy);
+        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, 77, true, addonPolicies);
+
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
+        PolicyRouter router = new PolicyRouter(OWNER, FIREWALL, address(unsafeRegistry), address(entitlement), BASE_PACK);
+
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(Router_InvalidPackAccessMode.selector, ADDON_PACK, uint8(77)));
+        router.enableAddonPack(ADDON_PACK);
+    }
+
     function test_Constructor_RevertsWhenBasePolicyMissingMetadata() public {
         MockUnsafePolicyPackRegistry unsafeRegistry = new MockUnsafePolicyPackRegistry();
         NonIntrospectPolicy basePolicy = new NonIntrospectPolicy();
 
         address[] memory basePolicies = new address[](1);
         basePolicies[0] = address(basePolicy);
-        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, true, basePolicies);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         vm.expectRevert(abi.encodeWithSelector(Router_PolicyMissingMetadata.selector, address(basePolicy)));
@@ -456,11 +610,11 @@ contract PolicyRouterTest is Test {
 
         address[] memory basePolicies = new address[](1);
         basePolicies[0] = address(basePolicy);
-        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, true, basePolicies);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
 
         address[] memory addonPolicies = new address[](1);
         addonPolicies[0] = address(addonPolicy);
-        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, true, addonPolicies);
+        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, true, addonPolicies);
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         PolicyRouter router = new PolicyRouter(OWNER, FIREWALL, address(unsafeRegistry), address(entitlement), BASE_PACK);
@@ -477,7 +631,7 @@ contract PolicyRouterTest is Test {
 
         address[] memory basePolicies = new address[](1);
         basePolicies[0] = address(basePolicy);
-        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, true, basePolicies);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         vm.expectRevert(abi.encodeWithSelector(Router_InvalidPolicyMetadata.selector, address(basePolicy)));
@@ -491,11 +645,11 @@ contract PolicyRouterTest is Test {
 
         address[] memory basePolicies = new address[](1);
         basePolicies[0] = address(basePolicy);
-        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, true, basePolicies);
+        unsafeRegistry.setPack(BASE_PACK, PACK_TYPE_BASE, PACK_ACCESS_FREE, true, basePolicies);
 
         address[] memory addonPolicies = new address[](1);
         addonPolicies[0] = address(addonPolicy);
-        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, true, addonPolicies);
+        unsafeRegistry.setPack(ADDON_PACK, PACK_TYPE_ADDON, PACK_ACCESS_ENTITLED, true, addonPolicies);
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
         PolicyRouter router = new PolicyRouter(OWNER, FIREWALL, address(unsafeRegistry), address(entitlement), BASE_PACK);

@@ -27,6 +27,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         (
             bool conservativeActive,
             uint8 conservativeType,
+            uint8 conservativeAccessMode,
             bytes32 conservativeMetadata,
             string memory conservativeSlug,
             uint16 conservativeVersion,
@@ -34,6 +35,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         ) = registry.getPackMeta(BASE_PACK_CONSERVATIVE);
         assertTrue(conservativeActive);
         assertEq(conservativeType, registry.PACK_TYPE_BASE());
+        assertEq(conservativeAccessMode, registry.PACK_ACCESS_FREE());
         assertEq(conservativeMetadata, keccak256("base-conservative"));
         assertEq(conservativeSlug, "base-conservative");
         assertEq(conservativeVersion, PACK_VERSION_V1);
@@ -48,6 +50,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         (
             bool defiActive,
             uint8 defiType,
+            uint8 defiAccessMode,
             bytes32 defiMetadata,
             string memory defiSlug,
             uint16 defiVersion,
@@ -55,6 +58,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         ) = registry.getPackMeta(BASE_PACK_DEFI);
         assertTrue(defiActive);
         assertEq(defiType, registry.PACK_TYPE_BASE());
+        assertEq(defiAccessMode, registry.PACK_ACCESS_FREE());
         assertEq(defiMetadata, keccak256("base-defi"));
         assertEq(defiSlug, "base-defi");
         assertEq(defiVersion, PACK_VERSION_V1);
@@ -71,6 +75,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         (
             bool addonActive,
             uint8 addonType,
+            uint8 addonAccessMode,
             bytes32 addonMetadata,
             string memory addonSlug,
             uint16 addonVersion,
@@ -78,6 +83,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         ) = registry.getPackMeta(ADDON_PACK_APPROVAL_HARDENING);
         assertTrue(addonActive);
         assertEq(addonType, registry.PACK_TYPE_ADDON());
+        assertEq(addonAccessMode, registry.PACK_ACCESS_FREE());
         assertEq(addonMetadata, keccak256("addon-approval-hardening"));
         assertEq(addonSlug, "addon-approval-hardening");
         assertEq(addonVersion, PACK_VERSION_V1);
@@ -90,6 +96,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         (
             bool newReceiverActive,
             uint8 newReceiverType,
+            uint8 newReceiverAccessMode,
             bytes32 newReceiverMetadata,
             string memory newReceiverSlug,
             uint16 newReceiverVersion,
@@ -97,6 +104,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         ) = registry.getPackMeta(ADDON_PACK_NEW_RECEIVER_24H);
         assertTrue(newReceiverActive);
         assertEq(newReceiverType, registry.PACK_TYPE_ADDON());
+        assertEq(newReceiverAccessMode, registry.PACK_ACCESS_FREE());
         assertEq(newReceiverMetadata, keccak256("addon-new-receiver-24h-delay"));
         assertEq(newReceiverSlug, "addon-new-receiver-24h-delay");
         assertEq(newReceiverVersion, PACK_VERSION_V1);
@@ -109,6 +117,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         (
             bool largeTransferActive,
             uint8 largeTransferType,
+            uint8 largeTransferAccessMode,
             bytes32 largeTransferMetadata,
             string memory largeTransferSlug,
             uint16 largeTransferVersion,
@@ -116,6 +125,7 @@ contract V2PackMetadataSmoke is SmokeBase {
         ) = registry.getPackMeta(ADDON_PACK_LARGE_TRANSFER_24H);
         assertTrue(largeTransferActive);
         assertEq(largeTransferType, registry.PACK_TYPE_ADDON());
+        assertEq(largeTransferAccessMode, registry.PACK_ACCESS_FREE());
         assertEq(largeTransferMetadata, keccak256("addon-large-transfer-24h-delay"));
         assertEq(largeTransferSlug, "addon-large-transfer-24h-delay");
         assertEq(largeTransferVersion, PACK_VERSION_V1);

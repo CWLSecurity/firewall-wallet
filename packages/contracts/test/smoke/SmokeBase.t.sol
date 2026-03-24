@@ -100,6 +100,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             BASE_PACK_CONSERVATIVE,
             registry.PACK_TYPE_BASE(),
+            registry.PACK_ACCESS_FREE(),
             keccak256("base-conservative"),
             "base-conservative",
             PACK_VERSION_V1,
@@ -116,6 +117,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             BASE_PACK_DEFI,
             registry.PACK_TYPE_BASE(),
+            registry.PACK_ACCESS_FREE(),
             keccak256("base-defi"),
             "base-defi",
             PACK_VERSION_V1,
@@ -128,6 +130,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             ADDON_PACK_APPROVAL_HARDENING,
             registry.PACK_TYPE_ADDON(),
+            registry.PACK_ACCESS_FREE(),
             keccak256("addon-approval-hardening"),
             "addon-approval-hardening",
             PACK_VERSION_V1,
@@ -140,6 +143,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             ADDON_PACK_NEW_RECEIVER_24H,
             registry.PACK_TYPE_ADDON(),
+            registry.PACK_ACCESS_FREE(),
             keccak256("addon-new-receiver-24h-delay"),
             "addon-new-receiver-24h-delay",
             PACK_VERSION_V1,
@@ -152,6 +156,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             ADDON_PACK_LARGE_TRANSFER_24H,
             registry.PACK_TYPE_ADDON(),
+            registry.PACK_ACCESS_FREE(),
             keccak256("addon-large-transfer-24h-delay"),
             "addon-large-transfer-24h-delay",
             PACK_VERSION_V1,
@@ -168,6 +173,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             basePackId,
             registry.PACK_TYPE_BASE(),
+            registry.PACK_ACCESS_FREE(),
             keccak256("base-custom"),
             "base-custom",
             PACK_VERSION_V1,
@@ -180,6 +186,7 @@ abstract contract SmokeBase is Test {
         registry.registerPackDetailed(
             packId,
             registry.PACK_TYPE_ADDON(),
+            registry.PACK_ACCESS_ENTITLED(),
             keccak256("addon"),
             "addon-custom",
             PACK_VERSION_V1,

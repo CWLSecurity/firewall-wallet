@@ -17,6 +17,7 @@ error Router_PackNotActive(uint256 packId);
 error Router_PackAlreadyEnabled(uint256 packId);
 error Router_NotEntitled(uint256 packId);
 error Router_EntitlementUnavailable();
+error Router_InvalidPackAccessMode(uint256 packId, uint8 packAccessMode);
 error Router_DuplicatePolicy(address policy);
 error Router_PolicyMissingMetadata(address policy);
 error Router_InvalidPolicyMetadata(address policy);
@@ -24,6 +25,8 @@ error Router_InvalidPolicyMetadata(address policy);
 contract PolicyRouter {
     uint8 internal constant PACK_TYPE_BASE = 0;
     uint8 internal constant PACK_TYPE_ADDON = 1;
+    uint8 internal constant PACK_ACCESS_FREE = 0;
+    uint8 internal constant PACK_ACCESS_ENTITLED = 1;
 
     // Base policies are fixed at creation and cannot be removed.
     IFirewallPolicy[] public policies;
@@ -109,9 +112,14 @@ contract PolicyRouter {
         if (!registry.isPackActive(packId)) revert Router_PackNotActive(packId);
         if (registry.packTypeOf(packId) != PACK_TYPE_ADDON) revert Router_InvalidAddonPack(packId);
 
-        if (entitlementManager == address(0)) revert Router_EntitlementUnavailable();
-        if (!IEntitlementManager(entitlementManager).isEntitled(owner, packId)) {
-            revert Router_NotEntitled(packId);
+        uint8 packAccessMode = registry.packAccessModeOf(packId);
+        if (packAccessMode == PACK_ACCESS_ENTITLED) {
+            if (entitlementManager == address(0)) revert Router_EntitlementUnavailable();
+            if (!IEntitlementManager(entitlementManager).isEntitled(owner, packId)) {
+                revert Router_NotEntitled(packId);
+            }
+        } else if (packAccessMode != PACK_ACCESS_FREE) {
+            revert Router_InvalidPackAccessMode(packId, packAccessMode);
         }
 
         address[] memory addonPolicies = registry.getPackPolicies(packId);
