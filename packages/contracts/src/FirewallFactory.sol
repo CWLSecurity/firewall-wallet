@@ -2,13 +2,23 @@
 pragma solidity ^0.8.23;
 
 import {FirewallModule} from "./FirewallModule.sol";
-import {PolicyRouter} from "./PolicyRouter.sol";
 import {IPolicyPackRegistry} from "./interfaces/IPolicyPackRegistry.sol";
 
 error Factory_ZeroAddress();
 error Factory_UnauthorizedOwner(address caller, address owner);
 error Factory_InvalidBasePack(uint256 packId);
 error Factory_InactiveBasePack(uint256 packId);
+error Factory_InvalidRouterDeployer(address deployer);
+
+interface IPolicyRouterDeployer {
+    function deploy(
+        address owner,
+        address firewallModule,
+        address policyPackRegistry,
+        address entitlementManager,
+        uint256 basePackId
+    ) external returns (address router);
+}
 
 /// @notice MVP deploy-based factory. No admin powers over wallets after creation.
 contract FirewallFactory {
@@ -19,8 +29,11 @@ contract FirewallFactory {
 
     address public immutable policyPackRegistry;
     address public immutable entitlementManager;
+    address public immutable policyRouterDeployer;
+    // Legacy deployment-level admin record (kept for introspection/backward compatibility).
     address public immutable feeConfigAdmin;
     mapping(address => bool) public isFactoryVault;
+    mapping(address => address) public latestWalletOfOwner;
 
     event WalletCreated(
         address indexed owner,
@@ -30,15 +43,20 @@ contract FirewallFactory {
         uint256 basePackId
     );
 
-    constructor(address policyPackRegistry_, address entitlementManager_) {
+    constructor(address policyPackRegistry_, address entitlementManager_, address policyRouterDeployer_) {
         if (policyPackRegistry_ == address(0)) revert Factory_ZeroAddress();
+        if (policyRouterDeployer_ == address(0) || policyRouterDeployer_.code.length == 0) {
+            revert Factory_InvalidRouterDeployer(policyRouterDeployer_);
+        }
         policyPackRegistry = policyPackRegistry_;
         entitlementManager = entitlementManager_;
+        policyRouterDeployer = policyRouterDeployer_;
         feeConfigAdmin = msg.sender;
     }
 
     function createWallet(address owner, address recovery, uint256 basePackId)
         external
+        payable
         returns (address wallet)
     {
         if (owner == address(0)) revert Factory_ZeroAddress();
@@ -52,12 +70,15 @@ contract FirewallFactory {
         }
 
         FirewallModule m = new FirewallModule();
-        PolicyRouter router =
-            new PolicyRouter(owner, address(m), policyPackRegistry, entitlementManager, basePackId);
-        m.init(address(router), owner, recovery, feeConfigAdmin, address(0));
+        address router = IPolicyRouterDeployer(policyRouterDeployer).deploy(
+            owner, address(m), policyPackRegistry, entitlementManager, basePackId
+        );
+        // Vault owner is fee-config admin by default to avoid centralized fee-control risk.
+        m.init{value: msg.value}(router, owner, recovery, owner, address(0));
         wallet = address(m);
         isFactoryVault[wallet] = true;
+        latestWalletOfOwner[owner] = wallet;
 
-        emit WalletCreated(owner, wallet, address(router), recovery, basePackId);
+        emit WalletCreated(owner, wallet, router, recovery, basePackId);
     }
 }

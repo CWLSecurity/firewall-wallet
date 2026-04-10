@@ -8,6 +8,7 @@ import {Decision} from "../../src/interfaces/IFirewallPolicy.sol";
 import {FirewallFactory} from "../../src/FirewallFactory.sol";
 import {FirewallModule} from "../../src/FirewallModule.sol";
 import {PolicyRouter} from "../../src/PolicyRouter.sol";
+import {PolicyRouterDeployer} from "../../src/PolicyRouterDeployer.sol";
 import {PolicyPackRegistry} from "../../src/PolicyPackRegistry.sol";
 import {SimpleEntitlementManager} from "../../src/SimpleEntitlementManager.sol";
 
@@ -76,7 +77,8 @@ abstract contract SmokeBase is Test {
     function _deployV2WithRealBasePacks() internal {
         registry = new PolicyPackRegistry(address(this));
         entitlement = new SimpleEntitlementManager(address(this));
-        factory = new FirewallFactory(address(registry), address(entitlement));
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
+        factory = new FirewallFactory(address(registry), address(entitlement), address(routerDeployer));
 
         conservativeApprove = new InfiniteApprovalPolicy(type(uint256).max, false);
         defiApprove = new DeFiApprovalPolicy();
@@ -168,7 +170,8 @@ abstract contract SmokeBase is Test {
     function _deployV2WithCustomBase(address[] memory basePolicies, uint256 basePackId) internal {
         registry = new PolicyPackRegistry(address(this));
         entitlement = new SimpleEntitlementManager(address(this));
-        factory = new FirewallFactory(address(registry), address(entitlement));
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
+        factory = new FirewallFactory(address(registry), address(entitlement), address(routerDeployer));
 
         registry.registerPackDetailed(
             basePackId,
@@ -200,6 +203,9 @@ abstract contract SmokeBase is Test {
         returns (FirewallModule wallet, PolicyRouter router)
     {
         vm.recordLogs();
+        if (OWNER != address(this)) {
+            vm.prank(OWNER);
+        }
         address walletAddr = factory.createWallet(OWNER, RECOVERY, basePackId);
         wallet = FirewallModule(payable(walletAddr));
 

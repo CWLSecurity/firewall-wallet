@@ -1,8 +1,9 @@
 # Firewall Vault Security Model (Current)
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
+
 ## 1. Scope
-This document describes the current security model implemented in this repository.
+This document describes the security model implemented in `firewall-wallet`.
 
 ## 2. Security objective
 Reduce wallet-drain impact by enforcing deterministic policy checks before execution.
@@ -33,8 +34,7 @@ Current curated pack IDs:
 - Scheduled execution guard:
   - `executeScheduled` re-evaluates policy state,
   - blocks if current decision is `Revert`,
-  - and if current decision is `Delay`, requires
-    `max(originalUnlockTime, createdAt + currentDelaySeconds)`.
+  - and for `Delay` requires `max(originalUnlockTime, createdAt + currentDelaySeconds)`.
 - Strict approval hardening:
   - `approve(0)` allow
   - `approve(non-zero)` revert
@@ -48,9 +48,6 @@ Current curated pack IDs:
   - `ApprovalToNewSpenderDelayPolicy`
   - `Erc20FirstNewRecipientDelayPolicy`
 
-These add friction to first risky spender/recipient paths while keeping normal DeFi contract interactions usable.
-State is scoped by `(vault, token, spender/recipient)` to avoid cross-token priming bypass.
-
 ### Phase 3A
 - `LargeTransferDelayPolicy` hardening:
   - delay on `>=` threshold,
@@ -58,14 +55,34 @@ State is scoped by `(vault, token, spender/recipient)` to avoid cross-token prim
   - narrow explicit selector scope preserved.
 
 ### Phase 3B
-- Factory ownership auth hardening:
+- Factory creation hardening:
   - `createWallet(owner, ...)` requires `msg.sender == owner`.
+- New vaults default fee role:
+  - vault owner becomes `feeConfigAdmin`.
 - DeFi receiver hardening:
-  - `NewEOAReceiverDelayPolicy` now delays first unknown-selector call to a new contract target.
-  - approval-like selectors remain excluded from receiver-delay classification.
-  - NFT transfer selectors are parsed for receiver extraction.
-- NFT receive baseline in module:
+  - first unknown-selector call to new EOA is delayed,
+  - first unknown-selector `(contract target, selector)` is delayed,
+  - approval-like selectors excluded from receiver-delay classification.
+- NFT receive baseline:
   - `FirewallModule` implements `IERC721Receiver`, `IERC1155Receiver`, and `IERC165`.
+
+### Phase 4 (queue automation hardening)
+- Owner/manual path remains available:
+  - `executeScheduled(txId)`.
+- Owner-controlled relayer authorization:
+  - `setQueueExecutor(executor, enabled)`.
+- Authorized relayer path:
+  - `executeScheduledByExecutor(txId)`.
+- Owner key isolation:
+  - bot runtime uses relayer key only.
+
+Queue gas reserve hardening:
+- Vault has bot gas pool accounting (`botGasPoolWei`).
+- Pool can be funded at creation (`createWallet` payable) and via `fundBotGasBuffer()`.
+- `schedule(...)` auto-reserves from bot pool (default target `0.00003 ETH` per tx).
+- Reserve is tracked per tx and excluded from unreserved-spend checks.
+- Relayer refund is capped by bot-config gas limits.
+- If owner executes manually/cancels, bot-origin reserve returns to bot pool.
 
 ## 6. Policy coverage summary
 Strict controls:
@@ -73,110 +90,69 @@ Strict controls:
 
 Delay controls:
 - large transfer delay,
-- first receiver delay (strict mode),
+- first receiver delay,
 - first EOA receiver delay (DeFi-oriented),
 - first risky spender/recipient delays in DeFi compensating policies,
 - scheduled execution re-check with current-delay enforcement.
 
-## 6A. Current Test Coverage
-Current on-chain suite (`235` tests) includes explicit coverage for:
+## 6A. Current test coverage
+Current on-chain suite (`246` tests) covers:
 - wallet creation and initial state,
 - base-pack behavior and add-on enablement,
 - delayed transfer and queue lifecycle paths,
-- 24-hour add-on transition semantics,
 - threshold boundaries around large-transfer triggers,
-- cross-policy isolation and cross-wallet isolation,
 - mixed multi-queue interleaving stress,
-- router behavior when policy `evaluate()` reverts.
-- factory owner-auth creation restriction.
-- safe ERC721/ERC1155 inbound transfer hooks on vault module.
-- unknown-selector contract-target first-call delay in DeFi receiver policy.
+- router behavior when policy `evaluate()` reverts,
+- factory owner-auth restriction,
+- safe ERC721/ERC1155 inbound transfer hooks,
+- unknown-selector hardening for DeFi receiver paths,
+- schedule reserve lifecycle (`scheduleWithReserve` / `topUp` / `cancel` release),
+- queue-executor relayer execution with unlock gating,
+- bot gas pool auto-reserve + refund + manual-return flows.
 
-## 6B. Recently Fixed Regression
-Resolved and regression-tested:
-- `NewReceiverDelayPolicy` previously misclassified approval-like calldata as new-receiver interactions.
-- Result was unintended cross-policy coupling (approval-path delays altered by receiver-delay add-on behavior).
-- Fix filters approval-like selectors from receiver-delay classification.
-
-## 6C. Policy Evaluation Failure Semantics
-Current router behavior on policy runtime failure:
+## 6B. Policy evaluation failure semantics
 - if any policy `evaluate()` reverts, router evaluation reverts (fail-closed).
-- This is security-favorable (no fail-open bypass), but introduces availability risk if a policy is faulty/misconfigured.
-- This behavior is now explicitly covered by tests.
+- This avoids fail-open bypass but introduces availability risk when a policy is faulty.
 
 ## 7. Execution fee model (B2C foundation)
 - Fee charging applies on successful `executeNow` and `executeScheduled`.
-- `schedule` does not charge an execution fee.
-- Fee basis is module-measured execution gas:
+- `schedule` does not charge execution fee.
+- Fee basis:
   - `gasUsed = gasStart - gasleft()`
   - `feeDue = (gasUsed * tx.gasprice * feePpm) / 1_000_000`
-- Immutable hard cap: max fee rate is `0.5%` of gas cost (`MAX_EXECUTION_FEE_CAP_PPM = 5000`).
-- Fee config updates are timelocked (`EXECUTION_FEE_CONFIG_TIMELOCK`) and publicly visible:
-  - pending config
-  - activation timestamp
-  - current config
-- Fee collection is best-effort and non-blocking:
-  - fee may be partially collected (or zero) if vault balance is insufficient or fee transfer fails,
-  - execution is not reverted by fee-transfer failure.
-- Therefore fee should not be treated as guaranteed-revenue accounting.
-- Fee governance is independent from policy evaluation semantics and does not modify policy outcomes.
+- Immutable hard cap: `MAX_EXECUTION_FEE_CAP_PPM = 5000` (`0.5%` of gas cost).
+- Fee config updates are timelocked and observable on-chain.
+- Fee collection is best-effort and non-blocking.
+- Fee payout respects queue reserve floor.
+
+## 7A. Queue automation economics
+- Auto-reserve default comes from bot pool for each `schedule(...)` call.
+- Explicit reserve funding paths still exist (`scheduleWithReserve`, `topUpScheduledReserve`).
+- Relayer refund comes from tx reserve and is capped by configured gas limits.
+- Queue automation still requires an external sender (owner or relayer); there is no autonomous chain-native execution.
 
 ## 8. Metadata trust model
-Minimum metadata guaranteed for every admitted policy:
+Every admitted policy must expose:
 - `policyKey()`
 - `policyName()`
 - `policyDescription()`
 - `policyConfigVersion()`
 - `policyConfig()`
 
-Admission enforcement:
-- `PolicyPackRegistry.registerPack` / `registerPackDetailed` reject policies without required metadata.
-- `PolicyRouter` rejects base/add-on policy addresses without required metadata.
-- Empty/invalid metadata shape (for example empty description/config) is rejected at admission.
+Admission enforcement exists in registry/router paths.
 
-`InfiniteApprovalPolicy` note:
-- strict enforcement blocks non-zero approve/increaseAllowance regardless of `approvalLimit`.
-- metadata marks this explicitly via `approval_limit_functional=false`; `approvalLimit` is legacy metadata only.
-
-## 9. Pack reconstructability model
-On-chain APIs support pack reconstruction:
-- `packCount()` + `packIdAt(index)` for canonical pack ID enumeration.
-- `getPackMeta(packId)` for pack state and self-description:
-  - `active`
-  - `packType`
-  - `metadata` hash
-  - `slug`
-  - `version`
-  - `policyCount`
-- `getPackPolicies(packId)` for policy address list.
-
-Limits:
-- `UnknownContractBlockPolicy` allowlist is mapping-based and not enumerable from state alone.
-- Full allowlist reconstruction requires indexing `AllowedSet(target, allowed)` events.
-
-## 10. B2B foundations (non-billing)
-- `ProtocolRegistry` enables on-chain target->protocol identification.
-- `FirewallModule` emits protocol interaction events for known protocol targets.
-- `TrustedVaultRegistry` enables on-chain recognized-vault checks for integrations.
-- `FirewallFactory.isFactoryVault(address)` provides factory-origin vault identity checks.
-- No live on-chain B2B billing or entitlement gating is implemented.
-- Protocol registry/trusted-vault/factory-origin data are not policy/security boundaries by default.
-
-For canonical monetization positioning and limits, see `MONETIZATION.md`.
-
-## 11. Known limitations and tradeoffs
+## 9. Known limitations and tradeoffs
 - Add-on disable path does not exist in current router.
 - Registry/entitlement changes do not remove already-enabled add-ons.
-- Add-on permanence is incompatible with expiring subscription-style pack validity unless router semantics change.
-- ERC20 thresholds are raw-unit based (not price-aware).
-- Large-transfer policy only covers ETH value + ERC20 `transfer` / `transferFrom` shapes.
-- DeFi unknown-selector delay is target-based; it does not decode final downstream recipient in nested router internals.
+- ERC20 thresholds are normalized to 1e18 units via token `decimals()` (still not price-aware).
+- Tokens with non-standard/missing `decimals()` metadata fall back to 18-decimal interpretation.
+- Large-transfer policy only covers ETH value + ERC20 `transfer` / `transferFrom`.
 - Delay is review time, not absolute prevention if owner later executes malicious intent.
 - Endpoint/device/signing-environment compromise remains out of protocol control.
-- `recovery` is reserved metadata only; no recovery authorization path is active.
-- Future hardening can still expand rare sequence/property-style stress coverage.
+- `recovery` is reserved metadata only.
+- If relayer is offline, owner can still execute manually.
 
-## 12. Trust boundaries
+## 10. Trust boundaries
 Users still trust:
 - signer wallet integrity,
 - frontend integrity,

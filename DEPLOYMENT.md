@@ -1,4 +1,6 @@
-# Firewall Vault Core — Deployment (Current v1 / v1.5)
+# Firewall Vault Core — Deployment (Current v2)
+
+Last updated: 2026-03-25
 
 ## Goal
 Deploy core with:
@@ -17,105 +19,105 @@ Deploy core with:
    - pack `3` type `ADDON` (New Receiver 24h Delay)
    - pack `4` type `ADDON` (Large Transfer 24h Delay)
 5. Deploy entitlement contract (`SimpleEntitlementManager` or compatible implementation).
-6. Deploy `FirewallFactory(policyPackRegistry, entitlementManager)`.
+6. Deploy `PolicyRouterDeployer`.
+7. Deploy `FirewallFactory(policyPackRegistry, entitlementManager, policyRouterDeployer)`.
+
+## Mandatory deploy policy
+For any deploy/upgrade script run:
+1. Run dry-run first (no broadcast).
+2. Check logs/artifacts.
+3. Run broadcast only after dry-run succeeds.
 
 ## Wallet creation
 Use:
-- `createWallet(owner, recovery, basePackId)`
+- `createWallet(owner, recovery, basePackId)` (`payable`)
 
-Creation authorization semantics:
+Creation semantics:
 - caller must equal `owner` (`msg.sender == owner`)
-- delegated creation by third party is rejected by factory
+- delegated creation by third party is rejected
+- new vaults set `feeConfigAdmin = owner`
+- `msg.value` is forwarded to module init and seeds Vault bot gas pool
 
-`recovery` is currently reserved metadata only (no recovery authorization flow yet).
+`recovery` is currently reserved metadata only.
 
-## DeFi base pack wiring (current)
-Base pack `1` includes:
-- `DeFiApprovalPolicy`
-- `ApprovalToNewSpenderDelayPolicy`
-- `Erc20FirstNewRecipientDelayPolicy`
-- `LargeTransferDelayPolicy`
-- `NewEOAReceiverDelayPolicy`
-
-`NewEOAReceiverDelayPolicy` behavior (current):
-- delays first transfer to new EOA receiver,
-- delays first unknown-selector call to a new contract target,
-- keeps approval-like selectors out of receiver-delay classification.
-
-## NFT receive support (module)
-`FirewallModule` now implements:
-- `onERC721Received`
-- `onERC1155Received`
-- `onERC1155BatchReceived`
-- `supportsInterface` (`IERC165`, `IERC721Receiver`, `IERC1155Receiver`)
-
-## Large transfer policy config shape (current)
-`LargeTransferDelayPolicy` expects:
-- `ETH_THRESHOLD_WEI`
-- `ERC20_THRESHOLD_UNITS`
-- `DELAY_SECONDS`
-
-Scope intentionally limited to:
-- native ETH tx value,
-- ERC20 `transfer(address,uint256)`,
-- ERC20 `transferFrom(address,address,uint256)`.
-
-## Add-on behavior
-- Add-ons are enabled via `PolicyRouter.enableAddonPack(packId)`.
-- On enable, policy addresses are snapshotted in wallet router.
-- Enabled add-ons remain active even if entitlement is later revoked or registry deactivates pack.
-- Current router has no add-on disable path.
-
-## Policy address validation
-- Registry registration rejects zero-address and non-contract policy addresses.
-- Router constructor/add-on enable path also rejects non-contract policy addresses.
-- Registry/router also require policy introspection metadata at admission:
-  - `policyKey`
-  - `policyName`
-  - `policyDescription`
-  - `policyConfigVersion`
-  - `policyConfig`
-
-## Pack metadata registration shape
-Curated scripts use `registerPackDetailed` with:
-- `packId`
-- `packType`
-- `metadata` hash
-- `slug`
-- `version`
-- `active`
-- `policies`
+## Current large-transfer test defaults
+Current deploy scripts keep conservative large-transfer thresholds at `0` for test stage.
+Production target is to restore `0.05 ETH` thresholds when launch policy switches to production mode.
 
 ## Queue discoverability
-- `FirewallModule.nextNonce()` exposes the next queue nonce.
-- `FirewallModule.scheduledTxIdByNonce(nonce)` provides deterministic tx id lookup by nonce.
-- `getScheduled(txId)` remains the source for per-tx status/details.
+- `nextNonce()` returns queue nonce upper-bound.
+- `scheduledTxIdByNonce(nonce)` maps nonce to tx id.
+- `getScheduled(txId)` is canonical per-tx read.
+
+## Queue automation (current)
+Owner/manual path remains:
+- `executeScheduled(txId)`
+
+Automation path:
+- owner authorizes relayer: `setQueueExecutor(executor, enabled)`
+- relayer executes unlocked tx: `executeScheduledByExecutor(txId)`
+
+Gas reserve flow:
+- `schedule(...)` auto-reserves from bot pool.
+- optional explicit reserve funding still supported:
+  - `scheduleWithReserve(...)` (`payable`)
+  - `topUpScheduledReserve(txId)` (`payable`)
+- `RunQueueRelayer` skips tx with zero reserve.
+
+Bot gas controls:
+- `fundBotGasBuffer()`
+- `botGasBuffer()`
+- `botGasConfig()`
+- `setBotGasConfig(...)`
+- `scheduledBotPoolReserve(txId)`
+
+Relayer script:
+- `packages/contracts/script/RunQueueRelayer.s.sol`
+
+Deployment manifest now also records:
+- `policyRouterDeployer`
+
+Run order:
+1. Dry-run relayer script (no broadcast):
+   - `cd packages/contracts && forge script script/RunQueueRelayer.s.sol:RunQueueRelayer --rpc-url "$BASE_RPC_URL" -vv`
+2. Enable relayer executor on vault (owner action):
+   - call `setQueueExecutor(<RELAYER_ADDRESS>, true)`
+3. Run once:
+   - `npm run bot:queue:once`
+4. Run loop:
+   - `npm run bot:queue:loop`
+5. UI/server mode:
+   - start server: `cd ../firewall-ui && npm run bot:server`
+   - enable/disable per-Vault automation from Queue modal.
+
+Required env:
+- `BASE_RPC_URL`
+- `VAULT_ADDRESS`
+- `RELAYER_PRIVATE_KEY` (fallback: `DEPLOYER_PK`)
+
+Optional env:
+- `QUEUE_SCAN_LIMIT`
 
 ## Execution fee configuration
-- Fee applies to successful `executeNow` / `executeScheduled` only.
+- Fee applies to successful `executeNow` / `executeScheduled`.
 - No fee is charged at `schedule(...)`.
-- Runtime fee basis in module:
+- Runtime basis:
   - `gasUsed = gasStart - gasleft()`
   - `feeDue = (gasUsed * tx.gasprice * feePpm) / 1_000_000`
-- Immutable max fee cap is on-chain (`MAX_EXECUTION_FEE_CAP_PPM`, equivalent `MAX_EXECUTION_FEE_CAP()` view).
-- Configure fee via timelocked flow:
+- Max fee cap is on-chain (`MAX_EXECUTION_FEE_CAP_PPM`, view `MAX_EXECUTION_FEE_CAP()`).
+- Timelocked update flow:
   - `proposeExecutionFeeConfig(feePpm, feeReceiver)`
   - wait timelock
   - `activateExecutionFeeConfig()`
-- Collection is best-effort: insufficient balance or failed fee transfer does not revert protected execution.
+- Collection is best-effort and does not revert protected execution.
 
 ## B2B foundation contracts
-- `ProtocolRegistry` for protocol id <-> target contract mapping.
-- `TrustedVaultRegistry` for recognized vault checks.
-- `FirewallFactory.isFactoryVault(address)` as factory-origin vault primitive.
-- These are extensibility primitives; they do not alter policy/security decisions.
+- `ProtocolRegistry`
+- `TrustedVaultRegistry`
+- `FirewallFactory.isFactoryVault(address)`
+- `FirewallFactory.latestWalletOfOwner(address)`
 
 ## Reproducibility and verification
-- Canonical deployment status and verification commands live in `DEPLOYMENT_STATUS.md`.
-- Script-level artifacts are emitted under `packages/contracts/broadcast/*`.
-
-## Notes
-- Add-on snapshot permanence supports one-time premium pack sales.
-- Expiring pack subscriptions are not supported by current router semantics without core behavior changes.
-- See `MONETIZATION.md` for canonical monetization semantics and trust boundaries.
+- Canonical status/commands: `DEPLOYMENT_STATUS.md`.
+- Script artifacts: `packages/contracts/broadcast/*`.
 - Do not edit generated artifacts under `packages/contracts/{out,cache,broadcast,deployments}`.

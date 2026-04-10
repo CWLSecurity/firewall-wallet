@@ -18,6 +18,14 @@ contract RevertingToken {
     }
 }
 
+contract MockPermit2Approve {
+    mapping(address => mapping(address => mapping(address => uint160))) public allowance;
+
+    function approve(address token, address spender, uint160 amount, uint48) external {
+        allowance[msg.sender][token][spender] = amount;
+    }
+}
+
 contract V2PackBehavior is SmokeBase {
     uint256 internal constant SMALL_VALUE = 0.01 ether;
     address internal constant SPENDER_EOA = address(0xBEEF);
@@ -155,6 +163,43 @@ contract V2PackBehavior is SmokeBase {
         assertEq(delay, DEFI_NEW_SPENDER_DELAY);
     }
 
+    function test_Base1DeFiTrader_Permit2Approve_NewSpenderStillDelayed_AfterSelectorWarmup() public {
+        (FirewallModule wallet,) = _createWalletAndRouter(BASE_PACK_DEFI);
+        MockERC20 token = new MockERC20();
+        MockPermit2Approve permit2 = new MockPermit2Approve();
+        MockReceiver spender1 = new MockReceiver();
+        MockReceiver spender2 = new MockReceiver();
+
+        bytes memory firstApproval =
+            abi.encodeWithSelector(bytes4(0x87517c45), address(token), address(spender1), uint160(1), uint48(1 days));
+
+        vm.expectRevert(Firewall_RevertedByPolicy.selector);
+        wallet.executeNow(address(permit2), 0, firstApproval);
+
+        bytes32 firstTxId = wallet.schedule(address(permit2), 0, firstApproval);
+        (, , , , uint48 firstUnlockTime,) = wallet.getScheduled(firstTxId);
+        assertEq(firstUnlockTime, uint48(block.timestamp) + DEFI_NEW_SPENDER_DELAY);
+
+        vm.warp(firstUnlockTime);
+        wallet.executeScheduled(firstTxId);
+        assertEq(permit2.allowance(address(wallet), address(token), address(spender1)), 1);
+
+        // Same spender should now be immediate.
+        wallet.executeNow(address(permit2), 0, firstApproval);
+        assertEq(permit2.allowance(address(wallet), address(token), address(spender1)), 1);
+
+        // New spender on the same Permit2 selector must still be delayed.
+        bytes memory secondApproval =
+            abi.encodeWithSelector(bytes4(0x87517c45), address(token), address(spender2), uint160(1), uint48(1 days));
+
+        vm.expectRevert(Firewall_RevertedByPolicy.selector);
+        wallet.executeNow(address(permit2), 0, secondApproval);
+
+        bytes32 secondTxId = wallet.schedule(address(permit2), 0, secondApproval);
+        (, , , , uint48 secondUnlockTime,) = wallet.getScheduled(secondTxId);
+        assertEq(secondUnlockTime, uint48(block.timestamp) + DEFI_NEW_SPENDER_DELAY);
+    }
+
     function test_Base1DeFiTrader_FirstSwapToNewRouter_DelayedByUnknownContractHardening() public {
         (FirewallModule wallet,) = _createWalletAndRouter(BASE_PACK_DEFI);
         MockReceiver routerLike = new MockReceiver();
@@ -209,6 +254,27 @@ contract V2PackBehavior is SmokeBase {
         bytes32 txId = wallet.schedule(receiver, SMALL_VALUE, "");
         (bool exists,,,,,) = wallet.getScheduled(txId);
         assertTrue(exists);
+    }
+
+    function test_Base1DeFiTrader_FirstUnknownSelectorToNewEOA_StillDelayed() public {
+        (FirewallModule wallet,) = _createWalletAndRouter(BASE_PACK_DEFI);
+        address receiver = address(0xCAFE);
+        vm.deal(address(wallet), 1 ether);
+        bytes memory unknownData = abi.encodeWithSignature("ignored(bytes32)", bytes32(uint256(1)));
+
+        vm.expectRevert(Firewall_RevertedByPolicy.selector);
+        wallet.executeNow(receiver, SMALL_VALUE, unknownData);
+
+        bytes32 txId = wallet.schedule(receiver, SMALL_VALUE, unknownData);
+        (, , , , uint48 unlockTime,) = wallet.getScheduled(txId);
+        assertEq(unlockTime, uint48(block.timestamp) + DEFI_NEW_RECEIVER_DELAY);
+
+        vm.warp(unlockTime);
+        wallet.executeScheduled(txId);
+        assertEq(receiver.balance, SMALL_VALUE);
+
+        wallet.executeNow(receiver, SMALL_VALUE, unknownData);
+        assertEq(receiver.balance, SMALL_VALUE * 2);
     }
 
     function test_Base1DeFiTrader_FirstErc20TransferToNewRecipient_Delayed() public {

@@ -27,6 +27,7 @@ import {console2} from "forge-std/console2.sol";
 
 import {FirewallFactory} from "../src/FirewallFactory.sol";
 import {FirewallModule} from "../src/FirewallModule.sol";
+import {PolicyRouterDeployer} from "../src/PolicyRouterDeployer.sol";
 import {Decision, IFirewallPolicy} from "../src/interfaces/IFirewallPolicy.sol";
 import {PolicyPackRegistry} from "../src/PolicyPackRegistry.sol";
 import {SimpleEntitlementManager} from "../src/SimpleEntitlementManager.sol";
@@ -181,9 +182,11 @@ contract SmokeMvpBase is Script {
 
         PolicyPackRegistry registry = new PolicyPackRegistry(owner);
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(owner);
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
         _registerSmokePacks(registry, policies);
 
-        factory = new FirewallFactory(address(registry), address(entitlement));
+        factory =
+            new FirewallFactory(address(registry), address(entitlement), address(routerDeployer));
     }
 
     function _deploySmokePolicies() internal returns (SmokePolicies memory policies) {
@@ -192,8 +195,8 @@ contract SmokeMvpBase is Script {
         policies.defiApprovalToNewSpender = address(new ApprovalToNewSpenderDelayPolicy(30 minutes));
         policies.defiErc20FirstRecipient = address(new Erc20FirstNewRecipientDelayPolicy(30 minutes));
 
-        // Small thresholds for smoke-flow convenience.
-        policies.conservativeLarge = address(new LargeTransferDelayPolicy(0.05 ether, 0.05 ether, 1 hours));
+        // TEST mode: conservative large-transfer threshold set to zero.
+        policies.conservativeLarge = address(new LargeTransferDelayPolicy(0, 0, 1 hours));
         policies.defiLarge = address(new LargeTransferDelayPolicy(0.25 ether, 0.25 ether, 30 minutes));
         policies.addonLarge = address(new LargeTransferDelayPolicy(1 ether, 1, 24 hours));
         policies.conservativeNewReceiver = address(new NewReceiverDelayPolicy(1 hours));

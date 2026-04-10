@@ -6,6 +6,8 @@
     "test:contracts": "cd packages/contracts && forge test -q",
     "test:contracts:full": "cd packages/contracts && forge test",
     "smoke:contracts": "cd packages/contracts && forge test --match-path 'test/smoke/*.sol'",
+    "bot:queue:once": "cd packages/contracts && forge script script/RunQueueRelayer.s.sol:RunQueueRelayer --rpc-url \"$BASE_RPC_URL\" --broadcast -vv",
+    "bot:queue:loop": "while true; do npm run bot:queue:once; sleep ${QUEUE_BOT_INTERVAL_SECONDS:-20}; done",
     "integrity:check": "./scripts/integrity.sh check",
     "integrity:update": "./scripts/integrity.sh update"
   }

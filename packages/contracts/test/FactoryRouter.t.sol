@@ -8,8 +8,11 @@ import {
     Factory_ZeroAddress,
     Factory_UnauthorizedOwner,
     Factory_InvalidBasePack,
-    Factory_InactiveBasePack
+    Factory_InactiveBasePack,
+    Factory_InvalidRouterDeployer
 } from "../src/FirewallFactory.sol";
+import {PolicyRouterDeployer} from "../src/PolicyRouterDeployer.sol";
+import {FirewallModule} from "../src/FirewallModule.sol";
 import {PolicyRouter, Router_Unauthorized} from "../src/PolicyRouter.sol";
 import {PolicyPackRegistry} from "../src/PolicyPackRegistry.sol";
 import {SimpleEntitlementManager} from "../src/SimpleEntitlementManager.sol";
@@ -65,7 +68,8 @@ contract FactoryRouterTest is Test {
         );
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
-        factory = new FirewallFactory(address(registry), address(entitlement));
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
+        factory = new FirewallFactory(address(registry), address(entitlement), address(routerDeployer));
         basePolicy = address(basePolicyConservative);
     }
 
@@ -93,6 +97,31 @@ contract FactoryRouterTest is Test {
         assertTrue(router != address(0), "WalletCreated not found");
     }
 
+    function _createWalletWithValue(FirewallFactory f, uint256 basePackId, uint256 valueWei)
+        internal
+        returns (address wallet, address router)
+    {
+        vm.recordLogs();
+        vm.deal(OWNER, valueWei + 1 ether);
+        vm.prank(OWNER);
+        wallet = f.createWallet{value: valueWei}(OWNER, RECOVERY, basePackId);
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 sig = keccak256("WalletCreated(address,address,address,address,uint256)");
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (
+                entries[i].emitter == address(f) &&
+                entries[i].topics.length == 4 &&
+                entries[i].topics[0] == sig
+            ) {
+                assertEq(address(uint160(uint256(entries[i].topics[2]))), wallet);
+                router = address(uint160(uint256(entries[i].topics[3])));
+                break;
+            }
+        }
+        assertTrue(router != address(0), "WalletCreated not found");
+    }
+
     function test_FactoryCreatesWalletAndRouter() public {
         (FirewallFactory f, address expectedBasePolicy) = _deployFactory();
         (address wallet, address routerAddr) = _createWallet(f, BASE_PACK_CONSERVATIVE);
@@ -102,9 +131,20 @@ contract FactoryRouterTest is Test {
         assertEq(r.firewallModule(), wallet);
         assertEq(r.basePackId(), BASE_PACK_CONSERVATIVE);
         assertEq(address(r.policies(0)), expectedBasePolicy);
+        assertEq(FirewallModule(payable(wallet)).feeConfigAdmin(), OWNER);
         assertTrue(routerAddr != address(0));
         assertTrue(wallet != address(0));
         assertTrue(routerAddr != wallet);
+        assertEq(f.latestWalletOfOwner(OWNER), wallet);
+    }
+
+    function test_FactoryCreateWallet_ForwardsInitialBotGasBuffer() public {
+        (FirewallFactory f,) = _deployFactory();
+        uint256 initialBotGasWei = 0.0002 ether;
+        (address wallet,) = _createWalletWithValue(f, BASE_PACK_CONSERVATIVE, initialBotGasWei);
+
+        assertEq(address(wallet).balance, initialBotGasWei);
+        assertEq(FirewallModule(payable(wallet)).botGasBuffer(), initialBotGasWei);
     }
 
     function test_FactoryRejectsAddonAsBasePack() public {
@@ -129,7 +169,9 @@ contract FactoryRouterTest is Test {
         );
 
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
-        FirewallFactory f = new FirewallFactory(address(registry), address(entitlement));
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
+        FirewallFactory f =
+            new FirewallFactory(address(registry), address(entitlement), address(routerDeployer));
 
         vm.prank(OWNER);
         vm.expectRevert(
@@ -159,8 +201,30 @@ contract FactoryRouterTest is Test {
 
     function test_FactoryConstructorRejectsZeroRegistry() public {
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
         vm.expectRevert(Factory_ZeroAddress.selector);
-        new FirewallFactory(address(0), address(entitlement));
+        new FirewallFactory(address(0), address(entitlement), address(routerDeployer));
+    }
+
+    function test_FactoryConstructorRejectsZeroRouterDeployer() public {
+        MockPolicy basePolicy = new MockPolicy(Decision.Allow, 0);
+        PolicyPackRegistry registry = new PolicyPackRegistry(address(this));
+        address[] memory conservative = new address[](1);
+        conservative[0] = address(basePolicy);
+        registry.registerPack(
+            BASE_PACK_CONSERVATIVE,
+            PACK_TYPE_BASE,
+            PACK_ACCESS_FREE,
+            keccak256("base-conservative"),
+            true,
+            conservative
+        );
+
+        SimpleEntitlementManager entitlement = new SimpleEntitlementManager(address(this));
+        vm.expectRevert(
+            abi.encodeWithSelector(Factory_InvalidRouterDeployer.selector, address(0))
+        );
+        new FirewallFactory(address(registry), address(entitlement), address(0));
     }
 
     function test_FactoryCreatesFreshRouterPerWallet() public {
@@ -172,6 +236,7 @@ contract FactoryRouterTest is Test {
         assertTrue(f.isFactoryVault(w1));
         assertTrue(f.isFactoryVault(w2));
         assertFalse(f.isFactoryVault(address(0xBEEF)));
+        assertEq(f.latestWalletOfOwner(OWNER), w2);
     }
 
     function test_NotifyExecuted_onlyWallet() public {
