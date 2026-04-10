@@ -27,6 +27,9 @@ jobs:
       - name: Integrity check
         run: npm run integrity:check
 
+      - name: Security static checks
+        run: npm run security:static
+
       - name: Contracts full test suite
         run: npm run test:contracts
 

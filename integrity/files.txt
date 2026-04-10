@@ -20,3 +20,8 @@ packages/contracts/test/FirewallModule.t.sol
 packages/contracts/test/policies/NewEOAReceiverDelayPolicy.t.sol
 packages/contracts/test/policies/NewReceiverDelayPolicy.t.sol
 packages/contracts/test/smoke/V2PackBehavior.t.sol
+packages/contracts/test/smoke/V2DecisionFoldParity.t.sol
+packages/contracts/test/smoke/V2TrustedWithdrawalSafety.t.sol
+
+# Security tooling
+scripts/security-static-check.sh
