@@ -124,6 +124,7 @@ CI/local parity shortcuts:
 npm run test:contracts
 npm run smoke:contracts
 npm run integrity:check
+npm run security:static
 ```
 
 ## Documentation Index
