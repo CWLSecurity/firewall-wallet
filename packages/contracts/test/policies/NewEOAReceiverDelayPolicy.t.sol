@@ -82,11 +82,45 @@ contract NewEOAReceiverDelayPolicyTest is Test {
         assertEq(delay2, 0);
     }
 
+    function test_UnknownSelector_ContractTargetScope_IsPerSelector() public {
+        MockReceiver protocol = new MockReceiver();
+        bytes memory swapData = abi.encodeWithSignature("swap(uint256)", 1);
+        bytes memory depositData = abi.encodeWithSignature("deposit(uint256)", 1);
+
+        vm.prank(router);
+        policy.onExecuted(address(vault), address(protocol), 0, swapData);
+
+        (Decision swapDecision, uint48 swapDelay) = policy.evaluate(address(vault), address(protocol), 0, swapData);
+        assertEq(uint256(swapDecision), uint256(Decision.Allow));
+        assertEq(swapDelay, 0);
+
+        (Decision depositDecision, uint48 depositDelay) =
+            policy.evaluate(address(vault), address(protocol), 0, depositData);
+        assertEq(uint256(depositDecision), uint256(Decision.Delay));
+        assertEq(depositDelay, DELAY);
+    }
+
     function test_ApprovalLikeSelector_ToContract_RemainsAllow() public {
         MockReceiver contractTarget = new MockReceiver();
         bytes memory approveData = abi.encodeWithSignature("approve(address,uint256)", address(0xCAFE), 10);
 
         (Decision decision, uint48 delay) = policy.evaluate(address(vault), address(contractTarget), 0, approveData);
+        assertEq(uint256(decision), uint256(Decision.Allow));
+        assertEq(delay, 0);
+    }
+
+    function test_ApprovalLikeSelector_Permit2Approve_ToContract_RemainsAllow() public {
+        MockReceiver contractTarget = new MockReceiver();
+        bytes memory permit2ApproveData = abi.encodeWithSelector(
+            bytes4(0x87517c45),
+            address(0xA1),
+            address(0xCAFE),
+            uint160(1),
+            uint48(30 days)
+        );
+
+        (Decision decision, uint48 delay) =
+            policy.evaluate(address(vault), address(contractTarget), 0, permit2ApproveData);
         assertEq(uint256(decision), uint256(Decision.Allow));
         assertEq(delay, 0);
     }
@@ -99,6 +133,13 @@ contract NewEOAReceiverDelayPolicyTest is Test {
             uint256(1)
         );
         (Decision decision, uint48 delay) = policy.evaluate(address(vault), token, 0, data);
+        assertEq(uint256(decision), uint256(Decision.Delay));
+        assertEq(delay, DELAY);
+    }
+
+    function test_Delay_OnUnknownSelector_ToEOA_WithCalldata() public view {
+        bytes memory data = abi.encodeWithSignature("any(bytes32)", bytes32(uint256(1)));
+        (Decision decision, uint48 delay) = policy.evaluate(address(vault), eoaReceiver, 1, data);
         assertEq(uint256(decision), uint256(Decision.Delay));
         assertEq(delay, DELAY);
     }
@@ -120,5 +161,23 @@ contract NewEOAReceiverDelayPolicyTest is Test {
         (Decision d2, uint48 delay2) = policy.evaluate(address(vault), eoaReceiver, 0, "");
         assertEq(uint256(d2), uint256(Decision.Allow));
         assertEq(delay2, 0);
+    }
+
+    function test_UnknownSelector_ContractTargetCodehashChange_ReDelays() public {
+        MockReceiver protocol = new MockReceiver();
+        bytes memory data = abi.encodeWithSignature("swap(uint256)", 1);
+
+        vm.prank(router);
+        policy.onExecuted(address(vault), address(protocol), 0, data);
+
+        (Decision beforeChange, uint48 beforeDelay) = policy.evaluate(address(vault), address(protocol), 0, data);
+        assertEq(uint256(beforeChange), uint256(Decision.Allow));
+        assertEq(beforeDelay, 0);
+
+        vm.etch(address(protocol), hex"60006000f3");
+
+        (Decision afterChange, uint48 afterDelay) = policy.evaluate(address(vault), address(protocol), 0, data);
+        assertEq(uint256(afterChange), uint256(Decision.Delay));
+        assertEq(afterDelay, DELAY);
     }
 }

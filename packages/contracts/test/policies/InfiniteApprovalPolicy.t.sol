@@ -138,6 +138,21 @@ contract InfiniteApprovalPolicyTest is Test {
         assertEq(uint256(delay), 0, "delay must be 0");
     }
 
+    function test_Reverts_Permit2Approve() public view {
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(0x87517c45),
+            address(token),
+            spender,
+            uint160(1),
+            uint48(30 days)
+        );
+
+        (Decision decision, uint48 delay) = policy.evaluate(address(token), address(this), 0, data);
+
+        assertEq(uint256(decision), uint256(Decision.Revert), "Permit2 approve must revert");
+        assertEq(uint256(delay), 0, "delay must be 0");
+    }
+
     function test_Reverts_PermitTransferFrom() public view {
         bytes memory data =
             abi.encodeWithSelector(bytes4(0x6949bce4), bytes32(uint256(1)), bytes32(uint256(2)), address(0xA1), bytes("sig"));

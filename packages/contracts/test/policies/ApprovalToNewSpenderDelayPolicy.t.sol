@@ -140,6 +140,31 @@ contract ApprovalToNewSpenderDelayPolicyTest is Test {
         assertEq(delay3, 0);
     }
 
+    function test_Permit2Approve_MirrorsSpenderRules() public {
+        MockReceiver contractSpender = new MockReceiver();
+
+        bytes memory zeroApproval = _permit2ApproveData(TOKEN, EOA_SPENDER, 0);
+        (Decision d0, uint48 delay0) = policy.evaluate(address(vault), TOKEN, 0, zeroApproval);
+        assertEq(uint256(d0), uint256(Decision.Allow));
+        assertEq(delay0, 0);
+
+        bytes memory eoaApproval = _permit2ApproveData(TOKEN, EOA_SPENDER, 1);
+        (Decision d1, uint48 delay1) = policy.evaluate(address(vault), TOKEN, 0, eoaApproval);
+        assertEq(uint256(d1), uint256(Decision.Revert));
+        assertEq(delay1, 0);
+
+        bytes memory contractApproval = _permit2ApproveData(TOKEN, address(contractSpender), 1);
+        (Decision d2, uint48 delay2) = policy.evaluate(address(vault), TOKEN, 0, contractApproval);
+        assertEq(uint256(d2), uint256(Decision.Delay));
+        assertEq(delay2, DELAY);
+
+        vm.prank(ROUTER);
+        policy.onExecuted(address(vault), TOKEN, 0, contractApproval);
+        (Decision d3, uint48 delay3) = policy.evaluate(address(vault), TOKEN, 0, contractApproval);
+        assertEq(uint256(d3), uint256(Decision.Allow));
+        assertEq(delay3, 0);
+    }
+
     function test_Rejects_UnauthorizedOnExecutedCaller() public {
         MockReceiver contractSpender = new MockReceiver();
         bytes memory data = abi.encodeWithSignature("approve(address,uint256)", address(contractSpender), 1);
@@ -169,6 +194,29 @@ contract ApprovalToNewSpenderDelayPolicyTest is Test {
         (Decision dB, uint48 delayB) = policy.evaluate(address(vault), TOKEN_2, 0, data);
         assertEq(uint256(dB), uint256(Decision.Delay));
         assertEq(delayB, DELAY);
+    }
+
+    function test_Permit2PrimesPerUnderlyingToken_NotGlobalOnPermit2Target() public {
+        MockReceiver contractSpender = new MockReceiver();
+        address permit2Target = TOKEN;
+
+        bytes memory tokenAApproval = _permit2ApproveData(TOKEN, address(contractSpender), 1);
+        bytes memory tokenBApproval = _permit2ApproveData(TOKEN_2, address(contractSpender), 1);
+
+        (Decision d1, uint48 delay1) = policy.evaluate(address(vault), permit2Target, 0, tokenAApproval);
+        assertEq(uint256(d1), uint256(Decision.Delay));
+        assertEq(delay1, DELAY);
+
+        vm.prank(ROUTER);
+        policy.onExecuted(address(vault), permit2Target, 0, tokenAApproval);
+
+        (Decision d2, uint48 delay2) = policy.evaluate(address(vault), permit2Target, 0, tokenAApproval);
+        assertEq(uint256(d2), uint256(Decision.Allow));
+        assertEq(delay2, 0);
+
+        (Decision d3, uint48 delay3) = policy.evaluate(address(vault), permit2Target, 0, tokenBApproval);
+        assertEq(uint256(d3), uint256(Decision.Delay));
+        assertEq(delay3, DELAY);
     }
 
     function test_OnExecuted_UnrelatedCalldata_DoesNotMarkKnownSpender() public {
@@ -224,5 +272,13 @@ contract ApprovalToNewSpenderDelayPolicyTest is Test {
             bytes32(0),
             bytes32(0)
         );
+    }
+
+    function _permit2ApproveData(address token, address spender, uint160 amount)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(bytes4(0x87517c45), token, spender, amount, uint48(30 days));
     }
 }

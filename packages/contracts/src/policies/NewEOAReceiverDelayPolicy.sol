@@ -16,7 +16,8 @@ import {IFirewallModuleView} from "../interfaces/IFirewallModuleView.sol";
 error ReceiverDelay_UnauthorizedHookCaller();
 
 /// @notice Delay first transfer to a new EOA receiver.
-///         Unknown-selector calls to new contract targets are also delayed once.
+///         Unknown-selector calls are delayed for first-time EOA targets and
+///         first-time (contract target, selector) pairs.
 contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, IPolicyIntrospection {
     bytes4 internal constant TRANSFER_SELECTOR = 0xa9059cbb;
     bytes4 internal constant TRANSFER_FROM_SELECTOR = 0x23b872dd;
@@ -30,6 +31,7 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
     bytes4 internal constant SET_APPROVAL_FOR_ALL_SELECTOR = 0xa22cb465;
     bytes4 internal constant PERMIT_EIP2612_SELECTOR = 0xd505accf;
     bytes4 internal constant PERMIT_DAI_SELECTOR = 0x8fcbaf0c;
+    bytes4 internal constant PERMIT2_APPROVE_SELECTOR = 0x87517c45;
     bytes4 internal constant PERMIT2_SINGLE_SELECTOR = 0x2b67b570;
     bytes4 internal constant PERMIT2_BATCH_SELECTOR = 0x2a2d80d1;
     bytes4 internal constant PERMIT2_TRANSFER_FROM_SELECTOR = 0x6949bce4;
@@ -40,8 +42,13 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
 
     // vault => eoa receiver => known
     mapping(address => mapping(address => bool)) public knownReceivers;
-    // vault => contract target => known (unknown-selector first-call hardening)
+    // Legacy coarse-grained marker retained for backwards compatibility in reads.
+    // vault => contract target => seen
     mapping(address => mapping(address => bool)) public knownContractTargets;
+    // vault => contract target => selector => known (unknown-selector first-call hardening)
+    mapping(address => mapping(address => mapping(bytes4 => bool))) public knownContractTargetSelectors;
+    // vault => contract target => selector => code fingerprint snapshotted at first successful execution
+    mapping(address => mapping(address => mapping(bytes4 => bytes32))) public knownContractTargetSelectorCodehash;
 
     constructor(uint48 _delaySeconds) {
         DELAY_SECONDS = _delaySeconds;
@@ -57,15 +64,15 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
 
     function policyDescription() external pure returns (string memory) {
         return
-            "Delays first transfer to a new EOA receiver and delays first unknown-selector call to a new contract target.";
+            "Delays first transfer to a new EOA receiver and delays first unknown-selector call per target+selector with codehash revalidation.";
     }
 
     function policyConfigVersion() external pure returns (uint16) {
-        return 2;
+        return 4;
     }
 
     function policyConfig() external view returns (PolicyConfigEntry[] memory entries) {
-        entries = new PolicyConfigEntry[](4);
+        entries = new PolicyConfigEntry[](7);
         entries[0] = PolicyConfigEntry({
             key: bytes32("delay_seconds"),
             valueType: PolicyConfigValueType.Uint256,
@@ -90,6 +97,24 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
             value: bytes32("delay_first_call"),
             unit: bytes32("mode")
         });
+        entries[4] = PolicyConfigEntry({
+            key: bytes32("unknown_contract_selector_scope"),
+            valueType: PolicyConfigValueType.Bytes32,
+            value: bytes32("target+selector"),
+            unit: bytes32("mode")
+        });
+        entries[5] = PolicyConfigEntry({
+            key: bytes32("unknown_eoa_selector_action"),
+            valueType: PolicyConfigValueType.Bytes32,
+            value: bytes32("delay_first_call"),
+            unit: bytes32("mode")
+        });
+        entries[6] = PolicyConfigEntry({
+            key: bytes32("unknown_contract_revalidate"),
+            valueType: PolicyConfigValueType.Bytes32,
+            value: bytes32("codehash+implhash"),
+            unit: bytes32("mode")
+        });
     }
 
     function evaluate(
@@ -98,7 +123,7 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
         uint256,
         bytes calldata data
     ) external view returns (Decision decision, uint48 delayOut) {
-        (address receiver, bool parsedTransferSelector, bool approvalLike, bool hasSelector) =
+        (address receiver, bool parsedTransferSelector, bool approvalLike, bool hasSelector, bytes4 selector) =
             _receiverFromCall(to, data);
 
         // Receiver-aware transfer selectors: delay first new EOA receiver only.
@@ -117,24 +142,24 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
             return (Decision.Allow, 0);
         }
 
-        // Native/plain transfer path (no selector): preserve classic "new EOA delay".
-        if (!hasSelector) {
-            if (to.code.length > 0) {
-                return (Decision.Allow, 0);
-            }
+        // Any call path to EOA preserves "first new EOA delay" semantics.
+        if (to.code.length == 0) {
             if (knownReceivers[vault][to]) {
                 return (Decision.Allow, 0);
             }
             return (Decision.Delay, DELAY_SECONDS);
         }
 
-        // Unknown selector to EOA remains out of scope.
-        if (to.code.length == 0) {
+        // No-selector calls to contracts are out of scope for this policy family.
+        if (!hasSelector) {
             return (Decision.Allow, 0);
         }
 
-        // Unknown selector to a new contract target gets delayed once.
-        if (knownContractTargets[vault][to]) {
+        // Unknown selector is trusted only while contract codehash stays unchanged.
+        if (
+            knownContractTargetSelectors[vault][to][selector]
+                && knownContractTargetSelectorCodehash[vault][to][selector] == _targetFingerprint(to)
+        ) {
             return (Decision.Allow, 0);
         }
 
@@ -150,7 +175,7 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
     ) external {
         _assertTrustedHookCaller(vault);
 
-        (address receiver, bool parsedTransferSelector, bool approvalLike, bool hasSelector) =
+        (address receiver, bool parsedTransferSelector, bool approvalLike, bool hasSelector, bytes4 selector) =
             _receiverFromCall(to, data);
 
         if (parsedTransferSelector) {
@@ -160,96 +185,97 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
             return;
         }
 
-        if (!hasSelector) {
-            if (to.code.length == 0) {
-                knownReceivers[vault][to] = true;
-            }
+        if (to.code.length == 0) {
+            knownReceivers[vault][to] = true;
             return;
         }
 
-        if (!approvalLike && to.code.length > 0) {
+        if (!approvalLike && hasSelector) {
             knownContractTargets[vault][to] = true;
+            knownContractTargetSelectors[vault][to][selector] = true;
+            knownContractTargetSelectorCodehash[vault][to][selector] = _targetFingerprint(to);
         }
     }
 
     function _receiverFromCall(address to, bytes calldata data)
         internal
         pure
-        returns (address receiver, bool parsedTransferSelector, bool approvalLike, bool hasSelector)
+        returns (address receiver, bool parsedTransferSelector, bool approvalLike, bool hasSelector, bytes4 selector)
     {
         receiver = to;
         parsedTransferSelector = false;
         approvalLike = false;
         hasSelector = data.length >= 4;
+        selector = bytes4(0);
         if (!hasSelector) {
-            return (receiver, parsedTransferSelector, approvalLike, hasSelector);
+            return (receiver, parsedTransferSelector, approvalLike, hasSelector, selector);
         }
 
-        bytes4 sel;
         assembly {
-            sel := calldataload(data.offset)
+            selector := calldataload(data.offset)
         }
 
-        if (_isApprovalLikeSelector(sel)) {
-            return (receiver, false, true, true);
+        if (_isApprovalLikeSelector(selector)) {
+            return (receiver, false, true, true, selector);
         }
 
         // ERC20 transfer(address,uint256)
-        if (sel == TRANSFER_SELECTOR && data.length >= 68) {
+        if (selector == TRANSFER_SELECTOR && data.length >= 68) {
             assembly {
                 receiver := and(calldataload(add(data.offset, 4)), 0xffffffffffffffffffffffffffffffffffffffff)
             }
-            return (receiver, true, false, true);
+            return (receiver, true, false, true, selector);
         }
 
         // ERC20 transferFrom(address,address,uint256)
         // ERC721 transferFrom(address,address,uint256)
-        if (sel == TRANSFER_FROM_SELECTOR && data.length >= 100) {
+        if (selector == TRANSFER_FROM_SELECTOR && data.length >= 100) {
             assembly {
                 receiver := and(calldataload(add(data.offset, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
             }
-            return (receiver, true, false, true);
+            return (receiver, true, false, true, selector);
         }
 
         // ERC721 safeTransferFrom(address,address,uint256)
-        if (sel == SAFE_TRANSFER_FROM_ERC721_SELECTOR && data.length >= 100) {
+        if (selector == SAFE_TRANSFER_FROM_ERC721_SELECTOR && data.length >= 100) {
             assembly {
                 receiver := and(calldataload(add(data.offset, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
             }
-            return (receiver, true, false, true);
+            return (receiver, true, false, true, selector);
         }
 
         // ERC721 safeTransferFrom(address,address,uint256,bytes)
-        if (sel == SAFE_TRANSFER_FROM_ERC721_WITH_DATA_SELECTOR && data.length >= 132) {
+        if (selector == SAFE_TRANSFER_FROM_ERC721_WITH_DATA_SELECTOR && data.length >= 132) {
             assembly {
                 receiver := and(calldataload(add(data.offset, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
             }
-            return (receiver, true, false, true);
+            return (receiver, true, false, true, selector);
         }
 
         // ERC1155 safeTransferFrom(address,address,uint256,uint256,bytes)
-        if (sel == SAFE_TRANSFER_FROM_ERC1155_SELECTOR && data.length >= 164) {
+        if (selector == SAFE_TRANSFER_FROM_ERC1155_SELECTOR && data.length >= 164) {
             assembly {
                 receiver := and(calldataload(add(data.offset, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
             }
-            return (receiver, true, false, true);
+            return (receiver, true, false, true, selector);
         }
 
         // ERC1155 safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)
-        if (sel == SAFE_BATCH_TRANSFER_FROM_ERC1155_SELECTOR && data.length >= 164) {
+        if (selector == SAFE_BATCH_TRANSFER_FROM_ERC1155_SELECTOR && data.length >= 164) {
             assembly {
                 receiver := and(calldataload(add(data.offset, 36)), 0xffffffffffffffffffffffffffffffffffffffff)
             }
-            return (receiver, true, false, true);
+            return (receiver, true, false, true, selector);
         }
 
-        return (receiver, false, false, true);
+        return (receiver, false, false, true, selector);
     }
 
     function _isApprovalLikeSelector(bytes4 sel) internal pure returns (bool) {
         return sel == APPROVE_SELECTOR || sel == INCREASE_ALLOWANCE_SELECTOR
             || sel == SET_APPROVAL_FOR_ALL_SELECTOR || sel == PERMIT_EIP2612_SELECTOR
-            || sel == PERMIT_DAI_SELECTOR || sel == PERMIT2_SINGLE_SELECTOR
+            || sel == PERMIT_DAI_SELECTOR || sel == PERMIT2_APPROVE_SELECTOR
+            || sel == PERMIT2_SINGLE_SELECTOR
             || sel == PERMIT2_BATCH_SELECTOR || sel == PERMIT2_TRANSFER_FROM_SELECTOR
             || sel == PERMIT2_WITNESS_TRANSFER_FROM_SELECTOR;
     }
@@ -262,5 +288,29 @@ contract NewEOAReceiverDelayPolicy is IFirewallPolicy, IFirewallPostExecPolicy, 
 
     function _boolToBytes32(bool value) internal pure returns (bytes32) {
         return value ? bytes32(uint256(1)) : bytes32(0);
+    }
+
+    function _extCodeHash(address target) internal view returns (bytes32 codehash) {
+        assembly {
+            codehash := extcodehash(target)
+        }
+    }
+
+    function _targetFingerprint(address target) internal view returns (bytes32) {
+        return keccak256(abi.encode(_extCodeHash(target), _implementationCodeHash(target)));
+    }
+
+    function _implementationCodeHash(address target) internal view returns (bytes32) {
+        (bool success, bytes memory returndata) = target.staticcall(hex"5c60da1b");
+        if (!success || returndata.length < 32) {
+            return bytes32(0);
+        }
+
+        address implementation = address(uint160(uint256(bytes32(returndata))));
+        if (implementation.code.length == 0) {
+            return bytes32(0);
+        }
+
+        return _extCodeHash(implementation);
     }
 }

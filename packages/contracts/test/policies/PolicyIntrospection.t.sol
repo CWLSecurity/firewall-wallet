@@ -84,14 +84,16 @@ contract PolicyIntrospectionTest is Test {
         assertEq(IPolicyIntrospection(address(policy)).policyKey(), keccak256("approval-to-new-spender-delay-v1"));
         assertEq(IPolicyIntrospection(address(policy)).policyName(), "ApprovalToNewSpenderDelayPolicy");
         assertTrue(bytes(IPolicyIntrospection(address(policy)).policyDescription()).length > 0);
-        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 1);
+        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 2);
         assertEq(policy.DELAY_SECONDS(), 30 minutes);
 
         PolicyConfigEntry[] memory cfg = IPolicyIntrospection(address(policy)).policyConfig();
-        assertEq(cfg.length, 4);
+        assertEq(cfg.length, 5);
         assertEq(cfg[0].key, bytes32("delay_seconds"));
         assertEq(_asUint(cfg[0]), 30 minutes);
         assertEq(cfg[1].key, bytes32("known_scope"));
+        assertEq(cfg[4].key, bytes32("permit2_approve_supported"));
+        assertEq(_asBool(cfg[4]), true);
     }
 
     function test_Erc20FirstNewRecipientDelay_IntrospectionAndConfig() public view {
@@ -118,19 +120,20 @@ contract PolicyIntrospectionTest is Test {
         assertEq(IPolicyIntrospection(address(policy)).policyKey(), keccak256("large-transfer-delay-v1"));
         assertEq(IPolicyIntrospection(address(policy)).policyName(), "LargeTransferDelayPolicy");
         assertTrue(bytes(IPolicyIntrospection(address(policy)).policyDescription()).length > 0);
-        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 1);
+        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 2);
         assertEq(policy.ETH_THRESHOLD_WEI(), 0.25 ether);
         assertEq(policy.ERC20_THRESHOLD_UNITS(), 0.25 ether);
         assertEq(policy.DELAY_SECONDS(), 30 minutes);
 
         PolicyConfigEntry[] memory cfg = IPolicyIntrospection(address(policy)).policyConfig();
-        assertEq(cfg.length, 5);
+        assertEq(cfg.length, 6);
         assertEq(cfg[0].key, bytes32("eth_threshold_wei"));
         assertEq(_asUint(cfg[0]), 0.25 ether);
         assertEq(cfg[1].key, bytes32("erc20_threshold_units"));
         assertEq(_asUint(cfg[1]), 0.25 ether);
         assertEq(cfg[2].key, bytes32("delay_seconds"));
         assertEq(_asUint(cfg[2]), 30 minutes);
+        assertEq(cfg[5].key, bytes32("erc20_threshold_unit_scale"));
     }
 
     function test_NewReceiverDelay_IntrospectionAndConfig() public view {
@@ -157,17 +160,20 @@ contract PolicyIntrospectionTest is Test {
         assertEq(IPolicyIntrospection(address(policy)).policyKey(), keccak256("new-eoa-receiver-delay-v1"));
         assertEq(IPolicyIntrospection(address(policy)).policyName(), "NewEOAReceiverDelayPolicy");
         assertTrue(bytes(IPolicyIntrospection(address(policy)).policyDescription()).length > 0);
-        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 2);
+        assertEq(IPolicyIntrospection(address(policy)).policyConfigVersion(), 4);
         assertEq(policy.DELAY_SECONDS(), 30 minutes);
         assertEq(policy.EOA_ONLY(), true);
 
         PolicyConfigEntry[] memory cfg = IPolicyIntrospection(address(policy)).policyConfig();
-        assertEq(cfg.length, 4);
+        assertEq(cfg.length, 7);
         assertEq(cfg[0].key, bytes32("delay_seconds"));
         assertEq(_asUint(cfg[0]), 30 minutes);
         assertEq(cfg[1].key, bytes32("eoa_only"));
         assertEq(_asBool(cfg[1]), true);
         assertEq(cfg[3].key, bytes32("unknown_contract_selector_action"));
+        assertEq(cfg[4].key, bytes32("unknown_contract_selector_scope"));
+        assertEq(cfg[5].key, bytes32("unknown_eoa_selector_action"));
+        assertEq(cfg[6].key, bytes32("unknown_contract_revalidate"));
     }
 
     function test_UnknownContract_IntrospectionAndConfig() public view {

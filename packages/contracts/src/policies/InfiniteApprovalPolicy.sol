@@ -14,6 +14,7 @@ contract InfiniteApprovalPolicy is IFirewallPolicy, IPolicyIntrospection {
     bytes4 internal constant SET_APPROVAL_FOR_ALL_SELECTOR = 0xa22cb465;
     bytes4 internal constant PERMIT_EIP2612_SELECTOR = 0xd505accf;
     bytes4 internal constant PERMIT_DAI_SELECTOR = 0x8fcbaf0c;
+    bytes4 internal constant PERMIT2_APPROVE_SELECTOR = 0x87517c45;
     bytes4 internal constant PERMIT2_SINGLE_SELECTOR = 0x2b67b570;
     bytes4 internal constant PERMIT2_BATCH_SELECTOR = 0x2a2d80d1;
     bytes4 internal constant PERMIT2_TRANSFER_FROM_SELECTOR = 0x6949bce4;
@@ -132,7 +133,8 @@ contract InfiniteApprovalPolicy is IFirewallPolicy, IPolicyIntrospection {
         }
 
         if (
-            sel == PERMIT_EIP2612_SELECTOR || sel == PERMIT_DAI_SELECTOR || sel == PERMIT2_SINGLE_SELECTOR
+            sel == PERMIT_EIP2612_SELECTOR || sel == PERMIT_DAI_SELECTOR || sel == PERMIT2_APPROVE_SELECTOR
+                || sel == PERMIT2_SINGLE_SELECTOR
                 || sel == PERMIT2_BATCH_SELECTOR || sel == PERMIT2_TRANSFER_FROM_SELECTOR
                 || sel == PERMIT2_WITNESS_TRANSFER_FROM_SELECTOR
         ) {

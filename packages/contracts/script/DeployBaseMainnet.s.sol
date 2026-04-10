@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import "forge-std/Script.sol";
 
 import {FirewallFactory} from "../src/FirewallFactory.sol";
+import {PolicyRouterDeployer} from "../src/PolicyRouterDeployer.sol";
 import {PolicyPackRegistry} from "../src/PolicyPackRegistry.sol";
 import {SimpleEntitlementManager} from "../src/SimpleEntitlementManager.sol";
 
@@ -42,6 +43,7 @@ contract DeployBaseMainnet is Script {
 
     struct DeploySnapshot {
         address factory;
+        address policyRouterDeployer;
         address registry;
         address entitlement;
         address conservativeApprove;
@@ -61,9 +63,10 @@ contract DeployBaseMainnet is Script {
         uint256 pk = vm.envUint("DEPLOYER_PK");
         address owner = vm.envOr("PACK_OWNER", vm.addr(pk));
         PackConfig memory cfg = PackConfig({
-            conservativeLargeEthThresholdWei: vm.envOr("LARGE_TRANSFER_THRESHOLD_WEI", uint256(0.05 ether)),
+            // TEMP(TEST): conservative large-transfer thresholds set to zero. Revert to 0.05 ether for production.
+            conservativeLargeEthThresholdWei: vm.envOr("LARGE_TRANSFER_THRESHOLD_WEI", uint256(0)),
             conservativeLargeErc20ThresholdUnits: vm.envOr(
-                "LARGE_TRANSFER_ERC20_THRESHOLD_UNITS", uint256(0.05 ether)
+                "LARGE_TRANSFER_ERC20_THRESHOLD_UNITS", uint256(0)
             ),
             conservativeLargeDelaySeconds: uint48(vm.envOr("LARGE_TRANSFER_DELAY_SECONDS", uint256(3600))),
             conservativeNewReceiverDelaySeconds: uint48(vm.envOr("NEW_RECEIVER_DELAY_SECONDS", uint256(3600))),
@@ -105,13 +108,16 @@ contract DeployBaseMainnet is Script {
 
         PolicyPackRegistry registry = new PolicyPackRegistry(owner);
         SimpleEntitlementManager entitlement = new SimpleEntitlementManager(owner);
+        PolicyRouterDeployer routerDeployer = new PolicyRouterDeployer();
 
         _registerPacks(registry, snapshot);
 
-        factory = new FirewallFactory(address(registry), address(entitlement));
+        factory =
+            new FirewallFactory(address(registry), address(entitlement), address(routerDeployer));
         vm.stopBroadcast();
 
         snapshot.factory = address(factory);
+        snapshot.policyRouterDeployer = address(routerDeployer);
         snapshot.registry = address(registry);
         snapshot.entitlement = address(entitlement);
     }
@@ -230,6 +236,7 @@ contract DeployBaseMainnet is Script {
         string memory obj = "deploy";
         vm.serializeString(obj, "architecture", "wallet-v2-pack-factory");
         vm.serializeAddress(obj, "factory", snapshot.factory);
+        vm.serializeAddress(obj, "policyRouterDeployer", snapshot.policyRouterDeployer);
         vm.serializeAddress(obj, "policyPackRegistry", snapshot.registry);
         vm.serializeAddress(obj, "entitlementManager", snapshot.entitlement);
         vm.serializeAddress(obj, "policy_infiniteApproval_conservative", snapshot.conservativeApprove);

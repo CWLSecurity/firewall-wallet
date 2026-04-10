@@ -7,9 +7,18 @@ import {LargeTransferDelayPolicy} from "../../src/policies/LargeTransferDelayPol
 import {MockERC20} from "../../src/mocks/MockERC20.sol";
 import {Decision} from "../../src/interfaces/IFirewallPolicy.sol";
 
+contract MockERC20WithCustomDecimals {
+    uint8 public immutable decimals;
+
+    constructor(uint8 decimals_) {
+        decimals = decimals_;
+    }
+}
+
 contract LargeTransferDelayPolicyTest is Test {
     LargeTransferDelayPolicy policy;
     MockERC20 token;
+    MockERC20WithCustomDecimals token6Decimals;
 
     address receiver = address(0xCAFE);
 
@@ -20,12 +29,13 @@ contract LargeTransferDelayPolicyTest is Test {
     function setUp() public {
         policy = new LargeTransferDelayPolicy(ETH_THRESHOLD, ERC20_THRESHOLD, DELAY);
         token = new MockERC20();
+        token6Decimals = new MockERC20WithCustomDecimals(6);
     }
 
     function test_Delay_OnEthTransfer_ExactlyThreshold() public view {
         bytes memory emptyData = "";
 
-        (Decision decision, uint48 delay) = policy.evaluate(receiver, address(this), ETH_THRESHOLD, emptyData);
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), receiver, ETH_THRESHOLD, emptyData);
 
         assertEq(uint256(decision), uint256(Decision.Delay), "ETH transfer at threshold must be delayed");
         assertEq(uint256(delay), uint256(DELAY), "delay must equal configured delay");
@@ -34,7 +44,7 @@ contract LargeTransferDelayPolicyTest is Test {
     function test_Allow_OnEthTransfer_BelowThreshold() public view {
         bytes memory emptyData = "";
 
-        (Decision decision, uint48 delay) = policy.evaluate(receiver, address(this), ETH_THRESHOLD - 1, emptyData);
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), receiver, ETH_THRESHOLD - 1, emptyData);
 
         assertEq(uint256(decision), uint256(Decision.Allow), "small ETH transfer must be allowed");
         assertEq(uint256(delay), 0, "delay must be 0");
@@ -43,7 +53,7 @@ contract LargeTransferDelayPolicyTest is Test {
     function test_Delay_OnERC20Transfer_ExactlyThreshold() public view {
         bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", receiver, ERC20_THRESHOLD);
 
-        (Decision decision, uint48 delay) = policy.evaluate(address(token), address(this), 0, data);
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), address(token), 0, data);
 
         assertEq(uint256(decision), uint256(Decision.Delay), "ERC20 transfer must be delayed");
         assertEq(uint256(delay), uint256(DELAY), "delay must equal configured delay");
@@ -56,8 +66,7 @@ contract LargeTransferDelayPolicyTest is Test {
             100
         );
 
-        (Decision decision, uint48 delay) =
-            policy.evaluate(address(token), address(this), 0, data);
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), address(token), 0, data);
 
         assertEq(uint256(decision), uint256(Decision.Allow), "non-related calls must be allowed");
         assertEq(uint256(delay), 0, "delay must be 0");
@@ -71,9 +80,27 @@ contract LargeTransferDelayPolicyTest is Test {
             ERC20_THRESHOLD
         );
 
-        (Decision decision, uint48 delay) = policy.evaluate(address(token), address(this), 0, data);
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), address(token), 0, data);
 
         assertEq(uint256(decision), uint256(Decision.Delay), "ERC20 transferFrom must be delayed");
         assertEq(uint256(delay), uint256(DELAY), "delay must equal configured delay");
+    }
+
+    function test_Delay_OnErc20Transfer_6Decimals_WhenNormalizedAmountHitsThreshold() public view {
+        bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", receiver, 2_000_000);
+
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), address(token6Decimals), 0, data);
+
+        assertEq(uint256(decision), uint256(Decision.Delay), "normalized 6-dec amount at threshold must be delayed");
+        assertEq(uint256(delay), uint256(DELAY), "delay must equal configured delay");
+    }
+
+    function test_Allow_OnErc20Transfer_6Decimals_WhenNormalizedAmountBelowThreshold() public view {
+        bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", receiver, 1_999_999);
+
+        (Decision decision, uint48 delay) = policy.evaluate(address(this), address(token6Decimals), 0, data);
+
+        assertEq(uint256(decision), uint256(Decision.Allow), "normalized 6-dec amount below threshold must allow");
+        assertEq(uint256(delay), 0, "delay must be 0");
     }
 }
