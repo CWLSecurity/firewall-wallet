@@ -34,7 +34,3 @@ packages/contracts/.env.*
 /packages/contracts/cache/**
 /packages/contracts/deployments/
 /packages/contracts/deployments/**
-
-# --- local AI assistant notes ---
-CODEX_PROJECT.md
-CODEX_RULES.md
