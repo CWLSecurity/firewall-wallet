@@ -24,12 +24,26 @@ ok() {
   printf '[security-static][ok] %s\n' "$*"
 }
 
+has_rg=0
+if command -v rg >/dev/null 2>&1; then
+  has_rg=1
+fi
+
+search_matches() {
+  local pattern="$1"
+  if [[ ${has_rg} -eq 1 ]]; then
+    rg -n -i -S "${pattern}" "${SRC_DIR}"
+  else
+    grep -RInP "${pattern}" "${SRC_DIR}"
+  fi
+}
+
 scan_forbidden_pattern() {
   local pattern="$1"
   local label="$2"
-  if rg -n -i -S "${pattern}" "${SRC_DIR}" >/dev/null 2>&1; then
+  if search_matches "${pattern}" >/dev/null 2>&1; then
     fail "${label}"
-    rg -n -i -S "${pattern}" "${SRC_DIR}" || true
+    search_matches "${pattern}" || true
   else
     ok "${label}"
   fi
@@ -49,7 +63,11 @@ else
   ok "no backup artifacts in contracts/src"
 fi
 
-assembly_count="$(rg -n -S '\bassembly\b' "${SRC_DIR}" | wc -l | tr -d ' ')"
+if [[ ${has_rg} -eq 1 ]]; then
+  assembly_count="$({ rg -n -S '\bassembly\b' "${SRC_DIR}" || true; } | wc -l | tr -d ' ')"
+else
+  assembly_count="$({ grep -RInP '\bassembly\b' "${SRC_DIR}" || true; } | wc -l | tr -d ' ')"
+fi
 log "assembly occurrences (informational): ${assembly_count}"
 
 if [[ ${failures} -gt 0 ]]; then
