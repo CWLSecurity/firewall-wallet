@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.28.2",
   "scripts": {
-    "test:contracts": "cd packages/contracts && forge test -q",
+    "test:contracts": "cd packages/contracts && forge test -q --no-match-path 'test/fork/*.sol'",
     "test:contracts:full": "cd packages/contracts && forge test",
     "smoke:contracts": "cd packages/contracts && forge test --match-path 'test/smoke/*.sol'",
     "security:static": "./scripts/security-static-check.sh",
