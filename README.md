@@ -146,6 +146,7 @@ npm run deploy:base
 - `QUEUE_AUTOMATION.md`
 - `DEPLOYMENT_STATUS.md`
 - `MONETIZATION.md`
+- `DEV_HANDOFF.md`
 - `../PROJECT_HOME/MARKETING_BRIEF.md`
 
 ## Product Surface Repos
