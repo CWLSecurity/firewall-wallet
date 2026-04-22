@@ -1,6 +1,6 @@
 # Firewall Vault Queue Automation
 
-Last updated: 2026-03-25
+Last updated: 2026-04-22
 
 ## Goal
 Automate delayed-transaction execution without storing owner key in bot runtime.
@@ -60,6 +60,7 @@ Automate delayed-transaction execution without storing owner key in bot runtime.
 NPM shortcuts:
 - `npm run bot:queue:once`
 - `npm run bot:queue:loop`
+- `RELAYER_ADDRESS=<0x...> VAULT_ADDRESS=<0x...> npm run bot:readiness:check`
 
 Required env:
 - `BASE_RPC_URL`
@@ -68,15 +69,18 @@ Required env:
 
 Optional env:
 - `QUEUE_SCAN_LIMIT` (default `128`)
+- `MIN_BOT_GAS_BUFFER_WEI` (optional threshold for `bot:readiness:check`)
 
 ## Runbook
 1. Dry run (simulation, no broadcast):
    - `cd packages/contracts && forge script script/RunQueueRelayer.s.sol:RunQueueRelayer --rpc-url "$BASE_RPC_URL" -vv`
 2. Enable relayer executor on vault (owner action):
    - call `setQueueExecutor(<RELAYER_ADDRESS>, true)`
-3. Execute once:
+3. Readiness preflight:
+   - `RELAYER_ADDRESS=<RELAYER_ADDRESS> VAULT_ADDRESS=<VAULT_ADDRESS> npm run bot:readiness:check`
+4. Execute once:
    - `npm run bot:queue:once`
-4. Run continuously:
+5. Run continuously:
    - `npm run bot:queue:loop`
 
 ## Security properties

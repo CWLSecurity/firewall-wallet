@@ -101,6 +101,7 @@ Bot gas management views/actions:
 ```bash
 npm run bot:queue:once
 npm run bot:queue:loop
+RELAYER_ADDRESS=<0x...> VAULT_ADDRESS=<0x...> npm run bot:readiness:check
 ```
 
 Required env:
@@ -110,6 +111,7 @@ Required env:
 
 Optional env:
 - `QUEUE_SCAN_LIMIT`
+- `MIN_BOT_GAS_BUFFER_WEI` (only for `bot:readiness:check`)
 
 ## Build and Test
 ```bash

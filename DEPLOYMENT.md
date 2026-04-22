@@ -91,11 +91,14 @@ Run order:
    - `cd packages/contracts && forge script script/RunQueueRelayer.s.sol:RunQueueRelayer --rpc-url "$BASE_RPC_URL" -vv`
 2. Enable relayer executor on vault (owner action):
    - call `setQueueExecutor(<RELAYER_ADDRESS>, true)`
-3. Run once:
+3. Readiness preflight (recommended before enabling continuous loop):
+   - `RELAYER_ADDRESS=<RELAYER_ADDRESS> VAULT_ADDRESS=<VAULT_ADDRESS> npm run bot:readiness:check`
+   - optional floor: `MIN_BOT_GAS_BUFFER_WEI=<wei>`
+4. Run once:
    - `npm run bot:queue:once`
-4. Run loop:
+5. Run loop:
    - `npm run bot:queue:loop`
-5. UI/server mode:
+6. UI/server mode:
    - start server: `cd ../firewall-ui && npm run bot:server`
    - enable/disable per-Vault automation from Queue modal.
 
