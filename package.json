@@ -7,6 +7,7 @@
     "test:contracts:full": "cd packages/contracts && forge test",
     "smoke:contracts": "cd packages/contracts && forge test --match-path 'test/smoke/*.sol'",
     "security:static": "./scripts/security-static-check.sh",
+    "bot:readiness:check": "bash ./scripts/check-bot-readiness.sh",
     "sync:ui-addresses": "bash ./scripts/sync-ui-addresses-from-manifest.sh",
     "deploy:base": "bash ./scripts/deploy-base-mainnet.sh",
     "bot:queue:once": "cd packages/contracts && forge script script/RunQueueRelayer.s.sol:RunQueueRelayer --rpc-url \"$BASE_RPC_URL\" --broadcast -vv",
