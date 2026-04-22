@@ -1,6 +1,6 @@
 # Firewall Vault Core
 
-Last updated: 2026-03-25
+Last updated: 2026-04-22
 
 `firewall-wallet` contains canonical on-chain contracts for Firewall Vault.
 
@@ -125,7 +125,16 @@ npm run test:contracts
 npm run smoke:contracts
 npm run integrity:check
 npm run security:static
+npm run sync:ui-addresses
+npm run deploy:base
 ```
+
+`npm run deploy:base` flow:
+- runs wallet quality/security gates first,
+- executes mandatory deploy dry-run,
+- broadcasts to Base Mainnet,
+- auto-syncs deployed addresses to `../firewall-ui/src/contracts/addresses/base.ts`,
+- auto-refreshes `firewall-ui/integrity/manifest.sha256`.
 
 ## Documentation Index
 - `PACK_MATRIX.md`

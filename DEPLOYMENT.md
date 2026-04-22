@@ -1,6 +1,6 @@
 # Firewall Vault Core — Deployment (Current v2)
 
-Last updated: 2026-03-25
+Last updated: 2026-04-22
 
 ## Goal
 Deploy core with:
@@ -27,6 +27,15 @@ For any deploy/upgrade script run:
 1. Run dry-run first (no broadcast).
 2. Check logs/artifacts.
 3. Run broadcast only after dry-run succeeds.
+
+Canonical local operator command:
+- `npm run deploy:base`
+
+This command enforces:
+- wallet quality/security gates (`integrity`, `security:static`, contracts tests, smoke tests),
+- dry-run before broadcast,
+- post-deploy auto-sync of addresses to `../firewall-ui/src/contracts/addresses/base.ts`,
+- auto-refresh of `firewall-ui` integrity manifest.
 
 ## Wallet creation
 Use:

@@ -1,6 +1,6 @@
 # Firewall Vault — Deployment Status
 
-Last updated: 2026-04-08
+Last updated: 2026-04-22
 
 ## 1) Release Track
 - Active release model: Base packs `0`,`1` + add-ons `2`,`3`,`4`.
@@ -39,23 +39,13 @@ Deployment policy (required):
 - Run `--broadcast` only after dry-run succeeds with expected output.
 
 ```bash
-cd firewall-wallet/packages/contracts
+cd firewall-wallet
 export DEPLOYER_PK=...
 export BASE_RPC_URL=...
-
-# 1) Dry-run (mandatory)
-export WRITE_DEPLOYMENT_JSON=false
-forge script script/DeployBaseMainnet.s.sol:DeployBaseMainnet \
-  --rpc-url "$BASE_RPC_URL" \
-  -vvv
-
-# 2) Broadcast (only after successful dry-run)
-export WRITE_DEPLOYMENT_JSON=true
 export DEPLOYMENT_OUT_PATH=deployments/base-mainnet-manifest.json
-forge script script/DeployBaseMainnet.s.sol:DeployBaseMainnet \
-  --rpc-url "$BASE_RPC_URL" \
-  --broadcast \
-  -vvv
+
+# Runs quality/security gates + dry-run + broadcast + UI address sync
+npm run deploy:base
 ```
 
 ## 5) Verification Path
@@ -78,6 +68,8 @@ Primary references:
 - `npm run test:contracts`
 - `npm run smoke:contracts`
 - `npm run integrity:check`
+- `npm run security:static`
+- `npm run sync:ui-addresses`
 
 ## 7) Monetization Alignment (Current)
 - Premium add-on model matches one-time persistent enable semantics.
