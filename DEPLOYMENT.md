@@ -37,6 +37,9 @@ This command enforces:
 - post-deploy auto-sync of addresses to `../firewall-ui/src/contracts/addresses/base.ts`,
 - auto-refresh of `firewall-ui` integrity manifest.
 
+Launch e2e smoke coverage:
+- `packages/contracts/test/smoke/V2EndToEndLaunchFlows.t.sol`
+
 ## Wallet creation
 Use:
 - `createWallet(owner, recovery, basePackId)` (`payable`)

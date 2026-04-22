@@ -131,6 +131,9 @@ npm run sync:ui-addresses
 npm run deploy:base
 ```
 
+Launch-critical smoke flow coverage includes:
+- `packages/contracts/test/smoke/V2EndToEndLaunchFlows.t.sol`
+
 `npm run deploy:base` flow:
 - runs wallet quality/security gates first,
 - executes mandatory deploy dry-run,
