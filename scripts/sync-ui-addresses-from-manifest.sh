@@ -43,7 +43,6 @@ POLICY_INFINITE_APPROVAL_CONSERVATIVE_ADDRESS="$(read_json '.policy_infiniteAppr
 POLICY_INFINITE_APPROVAL_DEFI_ADDRESS="$(read_json '.policy_approval_defi')"
 POLICY_APPROVAL_TO_NEW_SPENDER_DELAY_ADDRESS="$(read_json '.policy_approvalToNewSpenderDelay_defi')"
 POLICY_ERC20_FIRST_NEW_RECIPIENT_DELAY_ADDRESS="$(read_json '.policy_erc20FirstNewRecipientDelay_defi')"
-POLICY_INFINITE_APPROVAL_ADDON_HARDENING_ADDRESS="$(read_json '.policy_infiniteApproval_addonApprovalHardening')"
 POLICY_LARGE_TRANSFER_DELAY_ADDRESS="$(read_json '.policy_largeTransferDelay_conservative')"
 POLICY_LARGE_TRANSFER_DELAY_DEFI_ADDRESS="$(read_json '.policy_largeTransferDelay_defi')"
 POLICY_LARGE_TRANSFER_DELAY_ADDON_ADDRESS="$(read_json '.policy_largeTransferDelay_addonLargeTransfer24h')"
@@ -72,8 +71,6 @@ export const POLICY_APPROVAL_TO_NEW_SPENDER_DELAY_ADDRESS: Address =
   '${POLICY_APPROVAL_TO_NEW_SPENDER_DELAY_ADDRESS}'
 export const POLICY_ERC20_FIRST_NEW_RECIPIENT_DELAY_ADDRESS: Address =
   '${POLICY_ERC20_FIRST_NEW_RECIPIENT_DELAY_ADDRESS}'
-export const POLICY_INFINITE_APPROVAL_ADDON_HARDENING_ADDRESS: Address =
-  '${POLICY_INFINITE_APPROVAL_ADDON_HARDENING_ADDRESS}'
 export const POLICY_LARGE_TRANSFER_DELAY_ADDRESS: Address =
   '${POLICY_LARGE_TRANSFER_DELAY_ADDRESS}'
 export const POLICY_LARGE_TRANSFER_DELAY_DEFI_ADDRESS: Address =
@@ -92,7 +89,6 @@ export const KNOWN_POLICY_LABELS: Record<string, string> = {
   [POLICY_INFINITE_APPROVAL_DEFI_ADDRESS.toLowerCase()]: 'DeFi Approval Guard',
   [POLICY_APPROVAL_TO_NEW_SPENDER_DELAY_ADDRESS.toLowerCase()]: 'Approval To New Spender Delay',
   [POLICY_ERC20_FIRST_NEW_RECIPIENT_DELAY_ADDRESS.toLowerCase()]: 'ERC20 First New Recipient Delay',
-  [POLICY_INFINITE_APPROVAL_ADDON_HARDENING_ADDRESS.toLowerCase()]: 'Infinite Approval Guard (Add-on)',
   [POLICY_LARGE_TRANSFER_DELAY_ADDRESS.toLowerCase()]: 'Large Transfer Delay (Conservative)',
   [POLICY_LARGE_TRANSFER_DELAY_DEFI_ADDRESS.toLowerCase()]: 'Large Transfer Delay (DeFi)',
   [POLICY_LARGE_TRANSFER_DELAY_ADDON_ADDRESS.toLowerCase()]: 'Large Transfer Delay (Add-on)',

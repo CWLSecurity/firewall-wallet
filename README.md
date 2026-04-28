@@ -39,13 +39,12 @@ After MVP:
 
 ## Current Pack Surface
 Base packs:
-- Base `0`: Conservative (`Vault Safe` in UI)
+- Base `0`: Conservative (`Vault` in UI)
 - Base `1`: DeFi Trader
 
 Add-on packs:
-- Add-on `2`: Approval Hardening
-- Add-on `3`: New Receiver 24h Delay
-- Add-on `4`: Large Transfer 24h Delay
+- Add-on `2`: New Receiver 24h Delay
+- Add-on `3`: Large Transfer 24h Delay
 
 ## Creation and Bot Gas Buffer
 - `FirewallFactory.createWallet(owner, recovery, basePackId)` is `payable`.
