@@ -28,13 +28,12 @@ Factory checks:
 Expected curated packs:
 - Base `0` Conservative
 - Base `1` DeFi Trader
-- Add-on `2` Approval Hardening
-- Add-on `3` New Receiver 24h Delay
-- Add-on `4` Large Transfer 24h Delay
+- Add-on `2` New Receiver 24h Delay
+- Add-on `3` Large Transfer 24h Delay
 
 For registry reconstruction verify:
-- `packCount() == 5`
-- `packIdAt(0..4)` returns `0,1,2,3,4`
+- `packCount() == 4`
+- `packIdAt(0..3)` returns `0,1,2,3`
 - `getPackMeta(packId)` returns expected metadata
 
 For each pack verify:
@@ -59,9 +58,10 @@ For each active policy read:
 ## 5) Verify policy parameters
 Read structured config from `policyConfig()` and verify expected key/value pairs.
 
-Current test-stage note:
-- conservative large-transfer thresholds may be `0` in current deploy scripts.
-- production target remains restoring conservative threshold to `0.05 ETH`.
+Current default note:
+- conservative large-transfer thresholds default to `10 ETH` (`native` and `18-decimal ERC20 units`).
+- conservative and new-receiver base delays default to `1 hour`.
+- delay add-ons default to `24 hours`.
 
 ## 6) Verify critical behavior assumptions
 - Decision order remains `REVERT > DELAY > ALLOW`.

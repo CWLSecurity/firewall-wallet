@@ -20,9 +20,8 @@ contract DeployBaseMainnet is Script {
     uint16 internal constant PACK_VERSION_V1 = 1;
     uint256 internal constant BASE_PACK_CONSERVATIVE = 0;
     uint256 internal constant BASE_PACK_DEFI = 1;
-    uint256 internal constant ADDON_PACK_APPROVAL_HARDENING = 2;
-    uint256 internal constant ADDON_PACK_NEW_RECEIVER_24H = 3;
-    uint256 internal constant ADDON_PACK_LARGE_TRANSFER_24H = 4;
+    uint256 internal constant ADDON_PACK_NEW_RECEIVER_24H = 2;
+    uint256 internal constant ADDON_PACK_LARGE_TRANSFER_24H = 3;
 
     struct PackConfig {
         uint256 conservativeLargeEthThresholdWei;
@@ -50,7 +49,6 @@ contract DeployBaseMainnet is Script {
         address defiApprove;
         address defiApprovalToNewSpender;
         address defiErc20FirstRecipient;
-        address addonApprovalHardening;
         address conservativeLargeTransfer;
         address defiLargeTransfer;
         address addonLargeTransfer;
@@ -63,10 +61,9 @@ contract DeployBaseMainnet is Script {
         uint256 pk = vm.envUint("DEPLOYER_PK");
         address owner = vm.envOr("PACK_OWNER", vm.addr(pk));
         PackConfig memory cfg = PackConfig({
-            // TEMP(TEST): conservative large-transfer thresholds set to zero. Revert to 0.05 ether for production.
-            conservativeLargeEthThresholdWei: vm.envOr("LARGE_TRANSFER_THRESHOLD_WEI", uint256(0)),
+            conservativeLargeEthThresholdWei: vm.envOr("LARGE_TRANSFER_THRESHOLD_WEI", uint256(10 ether)),
             conservativeLargeErc20ThresholdUnits: vm.envOr(
-                "LARGE_TRANSFER_ERC20_THRESHOLD_UNITS", uint256(0)
+                "LARGE_TRANSFER_ERC20_THRESHOLD_UNITS", uint256(10 ether)
             ),
             conservativeLargeDelaySeconds: uint48(vm.envOr("LARGE_TRANSFER_DELAY_SECONDS", uint256(3600))),
             conservativeNewReceiverDelaySeconds: uint48(vm.envOr("NEW_RECEIVER_DELAY_SECONDS", uint256(3600))),
@@ -82,9 +79,9 @@ contract DeployBaseMainnet is Script {
                 vm.envOr("DEFI_ERC20_FIRST_RECIPIENT_DELAY_SECONDS", uint256(1800))
             ),
             defiNewReceiverDelaySeconds: uint48(vm.envOr("DEFI_NEW_RECEIVER_DELAY_SECONDS", uint256(1800))),
-            addonLargeEthThresholdWei: vm.envOr("VAULT_LARGE_TRANSFER_THRESHOLD_WEI", uint256(1 ether)),
+            addonLargeEthThresholdWei: vm.envOr("VAULT_LARGE_TRANSFER_THRESHOLD_WEI", uint256(10 ether)),
             addonLargeErc20ThresholdUnits: vm.envOr(
-                "VAULT_LARGE_TRANSFER_ERC20_THRESHOLD_UNITS", uint256(1)
+                "VAULT_LARGE_TRANSFER_ERC20_THRESHOLD_UNITS", uint256(10 ether)
             ),
             addonLargeDelaySeconds: uint48(vm.envOr("VAULT_LARGE_TRANSFER_DELAY_SECONDS", uint256(24 hours))),
             addonNewReceiverDelaySeconds: uint48(vm.envOr("VAULT_NEW_RECEIVER_DELAY_SECONDS", uint256(24 hours)))
@@ -129,7 +126,6 @@ contract DeployBaseMainnet is Script {
             address(new ApprovalToNewSpenderDelayPolicy(cfg.defiApprovalToNewSpenderDelaySeconds));
         snapshot.defiErc20FirstRecipient =
             address(new Erc20FirstNewRecipientDelayPolicy(cfg.defiErc20FirstRecipientDelaySeconds));
-        snapshot.addonApprovalHardening = address(new InfiniteApprovalPolicy(type(uint256).max, false));
         snapshot.conservativeLargeTransfer = address(
             new LargeTransferDelayPolicy(
                 cfg.conservativeLargeEthThresholdWei,
@@ -154,10 +150,9 @@ contract DeployBaseMainnet is Script {
 
     function _registerPacks(PolicyPackRegistry registry, DeploySnapshot memory snapshot) internal {
         // Base Pack 0: Conservative
-        address[] memory conservative = new address[](3);
-        conservative[0] = snapshot.conservativeApprove;
-        conservative[1] = snapshot.conservativeLargeTransfer;
-        conservative[2] = snapshot.conservativeNewReceiver;
+        address[] memory conservative = new address[](2);
+        conservative[0] = snapshot.conservativeLargeTransfer;
+        conservative[1] = snapshot.conservativeNewReceiver;
         registry.registerPackDetailed(
             BASE_PACK_CONSERVATIVE,
             registry.PACK_TYPE_BASE(),
@@ -187,21 +182,7 @@ contract DeployBaseMainnet is Script {
             defi
         );
 
-        // Add-on Pack 2: Approval Hardening
-        address[] memory approvalHardeningAddon = new address[](1);
-        approvalHardeningAddon[0] = snapshot.addonApprovalHardening;
-        registry.registerPackDetailed(
-            ADDON_PACK_APPROVAL_HARDENING,
-            registry.PACK_TYPE_ADDON(),
-            registry.PACK_ACCESS_FREE(),
-            keccak256("addon-approval-hardening"),
-            "addon-approval-hardening",
-            PACK_VERSION_V1,
-            true,
-            approvalHardeningAddon
-        );
-
-        // Add-on Pack 3: New Receiver 24h Delay
+        // Add-on Pack 2: New Receiver 24h Delay
         address[] memory newReceiverAddon = new address[](1);
         newReceiverAddon[0] = snapshot.addonNewReceiver;
         registry.registerPackDetailed(
@@ -215,7 +196,7 @@ contract DeployBaseMainnet is Script {
             newReceiverAddon
         );
 
-        // Add-on Pack 4: Large Transfer 24h Delay
+        // Add-on Pack 3: Large Transfer 24h Delay
         address[] memory largeTransferAddon = new address[](1);
         largeTransferAddon[0] = snapshot.addonLargeTransfer;
         registry.registerPackDetailed(
@@ -243,7 +224,6 @@ contract DeployBaseMainnet is Script {
         vm.serializeAddress(obj, "policy_approval_defi", snapshot.defiApprove);
         vm.serializeAddress(obj, "policy_approvalToNewSpenderDelay_defi", snapshot.defiApprovalToNewSpender);
         vm.serializeAddress(obj, "policy_erc20FirstNewRecipientDelay_defi", snapshot.defiErc20FirstRecipient);
-        vm.serializeAddress(obj, "policy_infiniteApproval_addonApprovalHardening", snapshot.addonApprovalHardening);
         vm.serializeAddress(obj, "policy_largeTransferDelay_conservative", snapshot.conservativeLargeTransfer);
         vm.serializeAddress(obj, "policy_largeTransferDelay_defi", snapshot.defiLargeTransfer);
         vm.serializeAddress(obj, "policy_largeTransferDelay_addonLargeTransfer24h", snapshot.addonLargeTransfer);
@@ -252,12 +232,10 @@ contract DeployBaseMainnet is Script {
         vm.serializeAddress(obj, "policy_newReceiverDelay_addonNewReceiver24h", snapshot.addonNewReceiver);
         vm.serializeUint(obj, "basePackConservative", BASE_PACK_CONSERVATIVE);
         vm.serializeUint(obj, "basePackDefi", BASE_PACK_DEFI);
-        vm.serializeUint(obj, "addonPackApprovalHardening", ADDON_PACK_APPROVAL_HARDENING);
         vm.serializeUint(obj, "addonPackNewReceiver24h", ADDON_PACK_NEW_RECEIVER_24H);
         vm.serializeUint(obj, "addonPackLargeTransfer24h", ADDON_PACK_LARGE_TRANSFER_24H);
         vm.serializeString(obj, "basePackConservativeSlug", "base-conservative");
         vm.serializeString(obj, "basePackDefiSlug", "base-defi");
-        vm.serializeString(obj, "addonPackApprovalHardeningSlug", "addon-approval-hardening");
         vm.serializeString(obj, "addonPackNewReceiver24hSlug", "addon-new-receiver-24h-delay");
         vm.serializeString(obj, "addonPackLargeTransfer24hSlug", "addon-large-transfer-24h-delay");
         vm.serializeUint(obj, "packVersion", PACK_VERSION_V1);

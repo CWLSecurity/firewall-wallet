@@ -3,7 +3,7 @@
 Last updated: 2026-04-22
 
 ## 1) Release Track
-- Active release model: Base packs `0`,`1` + add-ons `2`,`3`,`4`.
+- Active release model: Base packs `0`,`1` + add-ons `2`,`3`.
 - Current status: latest Base deployment artifacts and manifest are present in-repo.
 - MVP launch path uses this wallet deployment line together with `firewall-ui`.
 - Connector rollout remains a separate post-MVP track.

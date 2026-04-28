@@ -15,9 +15,8 @@ Deploy core with:
    - pack `0` type `BASE` (Conservative)
    - pack `1` type `BASE` (DeFi Trader)
 4. Register add-on packs:
-   - pack `2` type `ADDON` (Approval Hardening)
-   - pack `3` type `ADDON` (New Receiver 24h Delay)
-   - pack `4` type `ADDON` (Large Transfer 24h Delay)
+   - pack `2` type `ADDON` (New Receiver 24h Delay)
+   - pack `3` type `ADDON` (Large Transfer 24h Delay)
 5. Deploy entitlement contract (`SimpleEntitlementManager` or compatible implementation).
 6. Deploy `PolicyRouterDeployer`.
 7. Deploy `FirewallFactory(policyPackRegistry, entitlementManager, policyRouterDeployer)`.
@@ -52,9 +51,10 @@ Creation semantics:
 
 `recovery` is currently reserved metadata only.
 
-## Current large-transfer test defaults
-Current deploy scripts keep conservative large-transfer thresholds at `0` for test stage.
-Production target is to restore `0.05 ETH` thresholds when launch policy switches to production mode.
+## Current large-transfer defaults
+Current deploy scripts set Vault large-transfer thresholds to `10 ETH` (native and 18-decimal ERC20 units):
+- base Vault delay: `1 hour`
+- add-on delay: `24 hours`
 
 ## Queue discoverability
 - `nextNonce()` returns queue nonce upper-bound.

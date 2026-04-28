@@ -46,9 +46,8 @@ contract SmokeMvpBase is Script {
     uint16 internal constant PACK_VERSION_V1 = 1;
     uint256 internal constant BASE_PACK_CONSERVATIVE = 0;
     uint256 internal constant BASE_PACK_DEFI = 1;
-    uint256 internal constant ADDON_PACK_APPROVAL_HARDENING = 2;
-    uint256 internal constant ADDON_PACK_NEW_RECEIVER_24H = 3;
-    uint256 internal constant ADDON_PACK_LARGE_TRANSFER_24H = 4;
+    uint256 internal constant ADDON_PACK_NEW_RECEIVER_24H = 2;
+    uint256 internal constant ADDON_PACK_LARGE_TRANSFER_24H = 3;
 
     struct SmokePolicies {
         address conservativeApprove;
@@ -61,7 +60,6 @@ contract SmokeMvpBase is Script {
         address conservativeNewReceiver;
         address defiNewReceiver;
         address addonNewReceiver;
-        address addonApprovalHardening;
     }
 
     struct RunContext {
@@ -195,21 +193,18 @@ contract SmokeMvpBase is Script {
         policies.defiApprovalToNewSpender = address(new ApprovalToNewSpenderDelayPolicy(30 minutes));
         policies.defiErc20FirstRecipient = address(new Erc20FirstNewRecipientDelayPolicy(30 minutes));
 
-        // TEST mode: conservative large-transfer threshold set to zero.
-        policies.conservativeLarge = address(new LargeTransferDelayPolicy(0, 0, 1 hours));
+        policies.conservativeLarge = address(new LargeTransferDelayPolicy(10 ether, 10 ether, 1 hours));
         policies.defiLarge = address(new LargeTransferDelayPolicy(0.25 ether, 0.25 ether, 30 minutes));
-        policies.addonLarge = address(new LargeTransferDelayPolicy(1 ether, 1, 24 hours));
+        policies.addonLarge = address(new LargeTransferDelayPolicy(10 ether, 10 ether, 24 hours));
         policies.conservativeNewReceiver = address(new NewReceiverDelayPolicy(1 hours));
         policies.defiNewReceiver = address(new NewEOAReceiverDelayPolicy(30 minutes));
         policies.addonNewReceiver = address(new NewReceiverDelayPolicy(24 hours));
-        policies.addonApprovalHardening = address(new InfiniteApprovalPolicy(type(uint256).max, false));
     }
 
     function _registerSmokePacks(PolicyPackRegistry registry, SmokePolicies memory policies) internal {
-        address[] memory conservative = new address[](3);
-        conservative[0] = policies.conservativeApprove;
-        conservative[1] = policies.conservativeLarge;
-        conservative[2] = policies.conservativeNewReceiver;
+        address[] memory conservative = new address[](2);
+        conservative[0] = policies.conservativeLarge;
+        conservative[1] = policies.conservativeNewReceiver;
         registry.registerPackDetailed(
             BASE_PACK_CONSERVATIVE,
             registry.PACK_TYPE_BASE(),
@@ -236,19 +231,6 @@ contract SmokeMvpBase is Script {
             PACK_VERSION_V1,
             true,
             defi
-        );
-
-        address[] memory approvalHardeningAddon = new address[](1);
-        approvalHardeningAddon[0] = policies.addonApprovalHardening;
-        registry.registerPackDetailed(
-            ADDON_PACK_APPROVAL_HARDENING,
-            registry.PACK_TYPE_ADDON(),
-            registry.PACK_ACCESS_FREE(),
-            keccak256("addon-approval-hardening"),
-            "addon-approval-hardening",
-            PACK_VERSION_V1,
-            true,
-            approvalHardeningAddon
         );
 
         address[] memory newReceiverAddon = new address[](1);

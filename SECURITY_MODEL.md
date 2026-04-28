@@ -25,9 +25,8 @@ Priority is fixed: `REVERT > DELAY > ALLOW`.
 Current curated pack IDs:
 - Base `0`: Conservative
 - Base `1`: DeFi Trader
-- Add-on `2`: Approval Hardening
-- Add-on `3`: New Receiver 24h Delay
-- Add-on `4`: Large Transfer 24h Delay
+- Add-on `2`: New Receiver 24h Delay
+- Add-on `3`: Large Transfer 24h Delay
 
 ## 5. Implemented hardening
 ### Phase 1
@@ -35,13 +34,7 @@ Current curated pack IDs:
   - `executeScheduled` re-evaluates policy state,
   - blocks if current decision is `Revert`,
   - and for `Delay` requires `max(originalUnlockTime, createdAt + currentDelaySeconds)`.
-- Strict approval hardening:
-  - `approve(0)` allow
-  - `approve(non-zero)` revert
-  - `increaseAllowance(0)` allow
-  - `increaseAllowance(non-zero)` revert
-  - `setApprovalForAll(true)` revert
-  - permit-like selectors blocked unless policy config explicitly allows.
+- Approval policy hardening primitives exist in codebase and can be composed in curated packs.
 
 ### Phase 2
 - DeFi compensating controls:
@@ -86,7 +79,7 @@ Queue gas reserve hardening:
 
 ## 6. Policy coverage summary
 Strict controls:
-- strict approval/operator protections in conservative-style packs.
+- DeFi approval guardrails (`DeFiApprovalPolicy` with operator-wide approval block).
 
 Delay controls:
 - large transfer delay,
