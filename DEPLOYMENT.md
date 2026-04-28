@@ -1,6 +1,6 @@
 # Firewall Vault Core — Deployment (Current v2)
 
-Last updated: 2026-04-22
+Last updated: 2026-04-28
 
 ## Goal
 Deploy core with:

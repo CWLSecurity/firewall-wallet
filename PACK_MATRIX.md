@@ -1,6 +1,6 @@
 # Firewall Vault Pack Matrix (Canonical)
 
-Last updated: 2026-03-25
+Last updated: 2026-04-28
 
 ## Pack Taxonomy
 Base packs:

@@ -1,6 +1,6 @@
 # Firewall Vault Core
 
-Last updated: 2026-04-22
+Last updated: 2026-04-28
 
 `firewall-wallet` contains canonical on-chain contracts for Firewall Vault.
 

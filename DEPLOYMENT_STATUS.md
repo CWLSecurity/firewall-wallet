@@ -1,6 +1,6 @@
 # Firewall Vault — Deployment Status
 
-Last updated: 2026-04-22
+Last updated: 2026-04-28
 
 ## 1) Release Track
 - Active release model: Base packs `0`,`1` + add-ons `2`,`3`.
@@ -18,10 +18,10 @@ Last updated: 2026-04-22
   - deployed addresses mirrored from broadcast artifacts
 
 ## 2A) Latest Base Mainnet addresses
-- `factory`: `0x0f1da78A345883E2E1570f772e764fA53A018684`
-- `policyRouterDeployer`: `0x0652791573e93268f82CC157dd444f55E9a29B39`
-- `policyPackRegistry`: `0xCc68d5dCF2Dcdf8fa948FF255cF21E12D6eBd3Df`
-- `entitlementManager`: `0xaFbd4b726164a7D50A43EbCac48680D51fbB4214`
+- `factory`: `0xc0943B763Bbc1D1b3E568488Bad56356aEe99D1C`
+- `policyRouterDeployer`: `0x3cfDdb4F361dF757979331488c2b1742775EB671`
+- `policyPackRegistry`: `0x917FDBa1830633604F00C3D87B89ec47B2e3e92b`
+- `entitlementManager`: `0xD9574281f79Ac0962654ef8e0072A0415dF26f28`
 
 ## 3) Build/Tooling Assumptions
 - Foundry config: `packages/contracts/foundry.toml`
