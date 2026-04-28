@@ -147,7 +147,6 @@ Launch-critical smoke flow coverage includes:
 - `DEPLOYMENT.md`
 - `QUEUE_AUTOMATION.md`
 - `DEPLOYMENT_STATUS.md`
-- `MONETIZATION.md`
 - `DEV_HANDOFF.md`
 - `../PROJECT_HOME/MARKETING_BRIEF.md`
 

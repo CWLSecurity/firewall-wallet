@@ -70,8 +70,3 @@ Primary references:
 - `npm run integrity:check`
 - `npm run security:static`
 - `npm run sync:ui-addresses`
-
-## 7) Monetization Alignment (Current)
-- Premium add-on model matches one-time persistent enable semantics.
-- Execution fee model is bounded and timelocked where enabled.
-- Canonical wording and constraints: `MONETIZATION.md`.
