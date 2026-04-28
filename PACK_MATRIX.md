@@ -51,6 +51,7 @@ Add-on packs:
 
 ## Optional Policies Not in Default Curated Packs
 - `UnknownContractBlockPolicy` exists in codebase, not in default curated packs.
+- `InfiniteApprovalPolicy` exists in codebase and current deployment manifest, but is not part of the current live curated pack set.
 
 ## Reconstruction APIs
 - `packCount()` / `packIdAt(index)`

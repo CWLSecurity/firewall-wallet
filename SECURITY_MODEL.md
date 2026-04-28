@@ -28,6 +28,12 @@ Current curated pack IDs:
 - Add-on `2`: New Receiver 24h Delay
 - Add-on `3`: Large Transfer 24h Delay
 
+Current Base `0` live policy set:
+- `LargeTransferDelayPolicy`
+- `NewReceiverDelayPolicy`
+
+`InfiniteApprovalPolicy` exists in the codebase and current deployment manifest, but it is not included in the current live Base `0` pack and there is no live Approval Hardening add-on pack.
+
 ## 5. Implemented hardening
 ### Phase 1
 - Scheduled execution guard:
@@ -80,6 +86,7 @@ Queue gas reserve hardening:
 ## 6. Policy coverage summary
 Strict controls:
 - DeFi approval guardrails (`DeFiApprovalPolicy` with operator-wide approval block).
+- Strict non-zero approval blocking is available as `InfiniteApprovalPolicy`, but is not active in the current live curated pack set.
 
 Delay controls:
 - large transfer delay,

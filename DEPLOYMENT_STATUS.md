@@ -4,6 +4,9 @@ Last updated: 2026-04-28
 
 ## 1) Release Track
 - Active release model: Base packs `0`,`1` + add-ons `2`,`3`.
+- Current live/deploy lineup has no Approval Hardening add-on pack.
+- Current live/deploy Base `0` policy list is `LargeTransferDelayPolicy` + `NewReceiverDelayPolicy`.
+- `InfiniteApprovalPolicy` is deployed and kept in the manifest for code/config visibility, but it is not included in current live Base `0`.
 - Current status: latest Base deployment artifacts and manifest are present in-repo.
 - MVP launch path uses this wallet deployment line together with `firewall-ui`.
 - Connector rollout remains a separate post-MVP track.
@@ -63,6 +66,7 @@ Primary references:
 - New vaults now default `feeConfigAdmin` to wallet owner.
 - Module line supports safe NFT receive hooks (`ERC721` / `ERC1155`).
 - DeFi line includes unknown-selector hardening for first-time EOAs and first-time `(contract target, selector)` pairs.
+- Do not claim strict non-zero approval blocking for current Base `0` unless a future deployment includes `InfiniteApprovalPolicy` in that pack.
 
 ## 8) CI / Integrity Automation
 - `npm run test:contracts`

@@ -65,7 +65,7 @@ Current default note:
 
 ## 6) Verify critical behavior assumptions
 - Decision order remains `REVERT > DELAY > ALLOW`.
-- Strict non-zero approval hard blocks are present in strict packs.
+- Current Base `0` does not include strict non-zero approval hard blocks. If a future strict pack is deployed, verify `InfiniteApprovalPolicy` is included before relying on that behavior.
 - DeFi pack includes spender/recipient compensating controls.
 - DeFi line delays first unknown-selector call:
   - to first-time EOAs,
