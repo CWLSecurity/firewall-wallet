@@ -34,3 +34,6 @@ packages/contracts/.env.*
 /packages/contracts/cache/**
 /packages/contracts/deployments/
 /packages/contracts/deployments/**
+DEV_HANDOFF.md
+QUEUE_AUTOMATION.md
+DEPLOYMENT_STATUS.md
